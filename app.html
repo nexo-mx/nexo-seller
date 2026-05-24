@@ -14,15 +14,15 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc as firestoreUpdateDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-const OWNER_UID = 'Q0Hz0gZzftZLQnwcmFQKp2Cy0hq2'; // Solo el dueño puede activar/desactivar
+const OWNER_UID = 'TU_UID_AQUI'; // ← Cambia esto después de tu primer login // Solo el dueño puede activar/desactivar
 
 const firebaseConfig = {
-  apiKey:            "AIzaSyBjEPXyVt7ABkJk8fm9EUEoMyMqSRG_oIU",
-  authDomain:        "panini-2026-41b58.firebaseapp.com",
-  projectId:         "panini-2026-41b58",
-  storageBucket:     "panini-2026-41b58.firebasestorage.app",
-  messagingSenderId: "594186262464",
-  appId:             "1:594186262464:web:0304fd3302ca6f7a6e5a25"
+  apiKey:            "AIzaSyDtCiYP6JQOz9mSzggUq0onJCGYuQV2FKw",
+  authDomain:        "nexo-seller.firebaseapp.com",
+  projectId:         "nexo-seller",
+  storageBucket:     "nexo-seller.firebasestorage.app",
+  messagingSenderId: "39711638849",
+  appId:             "1:39711638849:web:3e70d7c4ece855e25fcdc0"
 };
 
 const app  = initializeApp(firebaseConfig);
