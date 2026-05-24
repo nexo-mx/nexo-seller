@@ -1,0 +1,2703 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexo Seller — Mi Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc as firestoreUpdateDoc }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const OWNER_UID = 'Q0Hz0gZzftZLQnwcmFQKp2Cy0hq2'; // Solo el dueño puede activar/desactivar
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyBjEPXyVt7ABkJk8fm9EUEoMyMqSRG_oIU",
+  authDomain:        "panini-2026-41b58.firebaseapp.com",
+  projectId:         "panini-2026-41b58",
+  storageBucket:     "panini-2026-41b58.firebasestorage.app",
+  messagingSenderId: "594186262464",
+  appId:             "1:594186262464:web:0304fd3302ca6f7a6e5a25"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+window._db = db;
+window._firestoreUtils = { collection, getDocs, doc, getDoc, setDoc };
+
+// ── AUTH ──────────────────────────────────────────────────────
+window.loginGoogle = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch(e) { showStatus('Error al iniciar sesión'); }
+};
+
+window.logoutAdmin = async () => {
+  await signOut(auth);
+};
+
+onAuthStateChanged(auth, async user => {
+  if (!user) { showLogin(); return; }
+  // Check if this user has been approved as a seller
+  try {
+    const sellerSnap = await getDoc(doc(db, 'sellers', user.uid));
+    if (!sellerSnap.exists() || !sellerSnap.data().active) {
+      showBlocked();
+      setTimeout(() => signOut(auth), 4000);
+      return;
+    }
+  } catch(e) {
+    showBlocked();
+    setTimeout(() => signOut(auth), 4000);
+    return;
+  }
+  document.getElementById('admin-name').textContent = user.displayName || user.email;
+  if (user.photoURL) {
+    const img = document.getElementById('admin-photo');
+    img.src = user.photoURL;
+    img.style.display = 'block';
+  }
+  window._sellerUid = user.uid;
+  showDashboard();
+  await loadData();
+});
+
+// ── DATA LOADING ──────────────────────────────────────────────
+function makeTeamStickers(code) {
+  const s = [];
+  for (let i = 1; i <= 20; i++) s.push(`${code} ${i}`);
+  return s;
+}
+const INTRO_CODES = ['00 1', ...Array.from({length:19},(_,i)=>`FWC ${i+1}`)];
+const CC_CODES    = Array.from({length:14},(_,i)=>`CC ${i+1}`);
+const TEAMS = [
+  {code:'MEX',name:'México',flag:'🇲🇽'},
+  {code:'RSA',name:'Sudáfrica',flag:'🇿🇦'},
+  {code:'KOR',name:'Corea del Sur',flag:'🇰🇷'},
+  {code:'CZE',name:'Chequia',flag:'🇨🇿'},
+  {code:'CAN',name:'Canadá',flag:'🇨🇦'},
+  {code:'BIH',name:'Bosnia y Herz.',flag:'🇧🇦'},
+  {code:'QAT',name:'Qatar',flag:'🇶🇦'},
+  {code:'SUI',name:'Suiza',flag:'🇨🇭'},
+  {code:'BRA',name:'Brasil',flag:'🇧🇷'},
+  {code:'MAR',name:'Marruecos',flag:'🇲🇦'},
+  {code:'HAI',name:'Haití',flag:'🇭🇹'},
+  {code:'SCO',name:'Escocia',flag:'🏴󠁧󠁢󠁳󠁣󠁴󠁿'},
+  {code:'USA',name:'Estados Unidos',flag:'🇺🇸'},
+  {code:'PAR',name:'Paraguay',flag:'🇵🇾'},
+  {code:'AUS',name:'Australia',flag:'🇦🇺'},
+  {code:'TUR',name:'Turquía',flag:'🇹🇷'},
+  {code:'GER',name:'Alemania',flag:'🇩🇪'},
+  {code:'CUW',name:'Curazao',flag:'🇨🇼'},
+  {code:'CIV',name:'Costa de Marfil',flag:'🇨🇮'},
+  {code:'ECU',name:'Ecuador',flag:'🇪🇨'},
+  {code:'NED',name:'Países Bajos',flag:'🇳🇱'},
+  {code:'JPN',name:'Japón',flag:'🇯🇵'},
+  {code:'SWE',name:'Suecia',flag:'🇸🇪'},
+  {code:'TUN',name:'Túnez',flag:'🇹🇳'},
+  {code:'BEL',name:'Bélgica',flag:'🇧🇪'},
+  {code:'EGY',name:'Egipto',flag:'🇪🇬'},
+  {code:'IRN',name:'Irán',flag:'🇮🇷'},
+  {code:'NZL',name:'Nueva Zelanda',flag:'🇳🇿'},
+  {code:'ESP',name:'España',flag:'🇪🇸'},
+  {code:'CPV',name:'Cabo Verde',flag:'🇨🇻'},
+  {code:'KSA',name:'Arabia Saudita',flag:'🇸🇦'},
+  {code:'URU',name:'Uruguay',flag:'🇺🇾'},
+  {code:'FRA',name:'Francia',flag:'🇫🇷'},
+  {code:'SEN',name:'Senegal',flag:'🇸🇳'},
+  {code:'IRQ',name:'Irak',flag:'🇮🇶'},
+  {code:'NOR',name:'Noruega',flag:'🇳🇴'},
+  {code:'ARG',name:'Argentina',flag:'🇦🇷'},
+  {code:'ALG',name:'Argelia',flag:'🇩🇿'},
+  {code:'AUT',name:'Austria',flag:'🇦🇹'},
+  {code:'JOR',name:'Jordania',flag:'🇯🇴'},
+  {code:'POR',name:'Portugal',flag:'🇵🇹'},
+  {code:'COD',name:'RD Congo',flag:'🇨🇩'},
+  {code:'UZB',name:'Uzbekistán',flag:'🇺🇿'},
+  {code:'COL',name:'Colombia',flag:'🇨🇴'},
+  {code:'ENG',name:'Inglaterra',flag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿'},
+  {code:'CRO',name:'Croacia',flag:'🇭🇷'},
+  {code:'GHA',name:'Ghana',flag:'🇬🇭'},
+  {code:'PAN',name:'Panamá',flag:'🇵🇦'},
+];
+const ALL_CODES = [...INTRO_CODES, ...CC_CODES, ...TEAMS.flatMap(t => makeTeamStickers(t.code))];
+const TOTAL = ALL_CODES.length;
+
+async function loadData() {
+  showStatus('Cargando usuarios…');
+  try {
+    // Load users
+    const usersSnap = await getDocs(collection(db, 'users'));
+    const users = [];
+    usersSnap.forEach(d => users.push({ uid: d.id, ...d.data() }));
+
+    // Load chats
+    const chatsSnap = await getDocs(collection(db, 'chats'));
+    const chats = [];
+    chatsSnap.forEach(d => chats.push({ id: d.id, ...d.data() }));
+
+    renderDashboard(users, chats);
+    showStatus('');
+  } catch(e) {
+    showStatus('Error: ' + e.message);
+  }
+}
+
+window.refresh = loadData;
+
+function renderDashboard(users, chats) {
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  // ── GLOBAL STATS ──
+  const totalUsers = users.length;
+  const usersWithProfile = users.filter(u => u.profile?.nickname).length;
+  const recentUsers = users.filter(u => u.updatedAt > weekAgo).length;
+
+  // Sticker stats across all users
+  let totalGot = 0, totalDups = 0, totalMissing = 0;
+  const codeCount = {}; // how many users have each sticker (at least 1)
+  const codeDups  = {}; // total duplicates per code across all users
+  ALL_CODES.forEach(c => { codeCount[c] = 0; codeDups[c] = 0; });
+
+  users.forEach(u => {
+    const s = u.stickers || {};
+    ALL_CODES.forEach(code => {
+      const n = s[code] || 0;
+      if (n >= 1) { totalGot++; codeCount[code]++; }
+      if (n > 1)  { totalDups += (n-1); codeDups[code] += (n-1); }
+      if (n === 0) totalMissing++;
+    });
+  });
+
+  const avgProgress = totalUsers > 0
+    ? (users.reduce((s, u) => {
+        const stk = u.stickers || {};
+        const got = ALL_CODES.filter(c => (stk[c] || 0) >= 1).length;
+        return s + got / TOTAL * 100;
+      }, 0) / totalUsers).toFixed(1)
+    : 0;
+
+  // Chat stats
+  const totalChats = chats.length;
+  let totalMessages = 0, totalProposals = 0, accepted = 0, completed = 0, declined = 0, pending = 0;
+  chats.forEach(c => {
+    totalMessages += (c.messages || []).filter(m => m.from !== '__system__').length;
+    if (c.proposal) {
+      totalProposals++;
+      if (c.proposal.status === 'accepted')  accepted++;
+      if (c.proposal.status === 'completed') completed++;
+      if (c.proposal.status === 'declined')  declined++;
+      if (c.proposal.status === 'pending')   pending++;
+    }
+  });
+
+  // Most wanted (many users missing it)
+  const mostMissed = ALL_CODES
+    .map(c => ({ code: c, missing: totalUsers - codeCount[c] }))
+    .sort((a,b) => b.missing - a.missing)
+    .slice(0, 10);
+
+  // Most duplicated
+  const mostDuped = ALL_CODES
+    .map(c => ({ code: c, dups: codeDups[c] }))
+    .filter(x => x.dups > 0)
+    .sort((a,b) => b.dups - a.dups)
+    .slice(0, 10);
+
+  // Team completion rates
+  const teamStats = TEAMS.map(t => {
+    const codes = makeTeamStickers(t.code);
+    const owned = codes.reduce((s,c) => s + codeCount[c], 0);
+    const maxPossible = codes.length * totalUsers;
+    const pct = maxPossible > 0 ? (owned / maxPossible * 100).toFixed(1) : 0;
+    const complete = users.filter(u => {
+      const s = u.stickers || {};
+      return codes.every(c => (s[c] || 0) >= 1);
+    }).length;
+    return { ...t, pct: parseFloat(pct), complete };
+  }).sort((a,b) => b.pct - a.pct);
+
+  // Per-user table
+  const userRows = users.map(u => {
+    const s = u.stickers || {};
+    const got  = ALL_CODES.filter(c => (s[c]||0) >= 1).length;
+    const dups = ALL_CODES.reduce((a,c) => a + Math.max(0,(s[c]||0)-1), 0);
+    const pct  = (got / TOTAL * 100).toFixed(1);
+    const name = u.profile?.nickname || u.displayName || u.email || u.uid.slice(0,8);
+    const city = u.profile?.city || '—';
+    const mode = u.profile?.mode || '—';
+    const active = u.updatedAt > weekAgo;
+    return { uid: u.uid, name, city, mode, got, dups, pct, active, photo: u.photoURL };
+  }).sort((a,b) => b.got - a.got);
+
+  // ── RENDER ──
+  document.getElementById('stat-users').textContent    = totalUsers;
+  document.getElementById('stat-active').textContent   = recentUsers;
+  document.getElementById('stat-profiles').textContent = usersWithProfile;
+  document.getElementById('stat-avg').textContent      = avgProgress + '%';
+  document.getElementById('stat-chats').textContent    = totalChats;
+  document.getElementById('stat-messages').textContent = totalMessages;
+  document.getElementById('stat-proposals').textContent= totalProposals;
+  document.getElementById('stat-completed').textContent= completed;
+
+  // Trade funnel
+  document.getElementById('funnel-pending').textContent  = pending;
+  document.getElementById('funnel-accepted').textContent = accepted;
+  document.getElementById('funnel-completed').textContent= completed;
+  document.getElementById('funnel-declined').textContent = declined;
+  const fMax = Math.max(pending, accepted, completed, declined, 1);
+  ['pending','accepted','completed','declined'].forEach(k => {
+    const v = parseInt(document.getElementById(`funnel-${k}`).textContent);
+    document.getElementById(`fbar-${k}`).style.width = (v/fMax*100) + '%';
+  });
+
+  // Most missed
+  const mmEl = document.getElementById('most-missed');
+  mmEl.innerHTML = mostMissed.map(({code,missing}) => `
+    <div class="rank-row">
+      <span class="rank-code">${code}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar missed" style="width:${(missing/totalUsers*100).toFixed(0)}%"></div></div>
+      <span class="rank-val">${missing}/${totalUsers}</span>
+    </div>`).join('');
+
+  // Most duped
+  const mdEl = document.getElementById('most-duped');
+  const maxDup = mostDuped[0]?.dups || 1;
+  mdEl.innerHTML = mostDuped.map(({code,dups}) => `
+    <div class="rank-row">
+      <span class="rank-code">${code}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar duped" style="width:${(dups/maxDup*100).toFixed(0)}%"></div></div>
+      <span class="rank-val">${dups}</span>
+    </div>`).join('');
+
+  // Team completion
+  const tcEl = document.getElementById('team-completion');
+  tcEl.innerHTML = teamStats.map(t => `
+    <div class="team-row">
+      <span class="team-flag">${t.flag}</span>
+      <span class="team-name">${t.name}</span>
+      <div class="rank-bar-wrap" style="flex:1">
+        <div class="rank-bar team" style="width:${t.pct}%;background:${t.pct>66?'var(--green)':t.pct>33?'var(--gold)':'var(--red)'}"></div>
+      </div>
+      <span class="rank-val">${t.pct}%</span>
+      <span class="team-complete">${t.complete > 0 ? `${t.complete} completo${t.complete>1?'s':''}` : ''}</span>
+    </div>`).join('');
+
+  // Store full user data globally for expandable rows
+  window._adminUsers = users;
+
+  // Users table with expandable rows
+  const utEl = document.getElementById('users-table-body');
+  utEl.innerHTML = userRows.map((u,i) => `
+    <tr class="user-main-row" onclick="toggleUserDetail('${u.uid}')" style="cursor:pointer;">
+      <td><span style="color:#555;font-family:'DM Mono',monospace;font-size:11px;">${i+1}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">
+            ${u.photo ? `<img src="${u.photo}" style="width:100%;height:100%;object-fit:cover;">` : '👤'}
+          </div>
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;">${u.name}</div>
+            <div style="font-size:11px;color:#555;">${u.city}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="mode-pill ${u.mode==='both'?'both':'swap'}">${u.mode==='both'?'💰 Compra/venta':'🔄 Cambios'}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;height:4px;background:var(--border);border-radius:2px;min-width:60px;">
+            <div style="height:100%;background:${parseFloat(u.pct)>66?'var(--green)':parseFloat(u.pct)>33?'var(--gold)':'var(--red)'};border-radius:2px;width:${u.pct}%"></div>
+          </div>
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--gold);min-width:36px;">${u.pct}%</span>
+        </div>
+      </td>
+      <td style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--green);">${u.got}</td>
+      <td style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--orange);">${u.dups}</td>
+      <td><span style="width:8px;height:8px;border-radius:50%;background:${u.active?'var(--green)':'#333'};display:inline-block;"></span></td>
+      <td style="color:#333;font-size:12px;" id="arrow-${u.uid}">▶</td>
+    </tr>
+    <tr class="user-detail-row" id="detail-${u.uid}" style="display:none;">
+      <td colspan="8" style="padding:0;">
+        <div class="user-album-panel" id="album-${u.uid}"></div>
+      </td>
+    </tr>`).join('');
+
+  document.getElementById('last-updated').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-MX');
+  loadAndRenderShopAdmin();
+}
+
+// ── EXPANDABLE USER ALBUM ─────────────────────────────────────
+const ALL_TEAMS_DEF = [
+  {code:'MEX',name:'México',flag:'🇲🇽'},{code:'RSA',name:'Sudáfrica',flag:'🇿🇦'},
+  {code:'KOR',name:'Corea del Sur',flag:'🇰🇷'},{code:'CZE',name:'Chequia',flag:'🇨🇿'},
+  {code:'CAN',name:'Canadá',flag:'🇨🇦'},{code:'BIH',name:'Bosnia',flag:'🇧🇦'},
+  {code:'QAT',name:'Qatar',flag:'🇶🇦'},{code:'SUI',name:'Suiza',flag:'🇨🇭'},
+  {code:'BRA',name:'Brasil',flag:'🇧🇷'},{code:'MAR',name:'Marruecos',flag:'🇲🇦'},
+  {code:'HAI',name:'Haití',flag:'🇭🇹'},{code:'SCO',name:'Escocia',flag:'🏴󠁧󠁢󠁳󠁣󠁴󠁿'},
+  {code:'USA',name:'USA',flag:'🇺🇸'},{code:'PAR',name:'Paraguay',flag:'🇵🇾'},
+  {code:'AUS',name:'Australia',flag:'🇦🇺'},{code:'TUR',name:'Turquía',flag:'🇹🇷'},
+  {code:'GER',name:'Alemania',flag:'🇩🇪'},{code:'CUW',name:'Curazao',flag:'🇨🇼'},
+  {code:'CIV',name:'C. Marfil',flag:'🇨🇮'},{code:'ECU',name:'Ecuador',flag:'🇪🇨'},
+  {code:'NED',name:'Países Bajos',flag:'🇳🇱'},{code:'JPN',name:'Japón',flag:'🇯🇵'},
+  {code:'SWE',name:'Suecia',flag:'🇸🇪'},{code:'TUN',name:'Túnez',flag:'🇹🇳'},
+  {code:'BEL',name:'Bélgica',flag:'🇧🇪'},{code:'EGY',name:'Egipto',flag:'🇪🇬'},
+  {code:'IRN',name:'Irán',flag:'🇮🇷'},{code:'NZL',name:'Nueva Zelanda',flag:'🇳🇿'},
+  {code:'ESP',name:'España',flag:'🇪🇸'},{code:'CPV',name:'Cabo Verde',flag:'🇨🇻'},
+  {code:'KSA',name:'Arabia Saudita',flag:'🇸🇦'},{code:'URU',name:'Uruguay',flag:'🇺🇾'},
+  {code:'FRA',name:'Francia',flag:'🇫🇷'},{code:'SEN',name:'Senegal',flag:'🇸🇳'},
+  {code:'IRQ',name:'Irak',flag:'🇮🇶'},{code:'NOR',name:'Noruega',flag:'🇳🇴'},
+  {code:'ARG',name:'Argentina',flag:'🇦🇷'},{code:'ALG',name:'Argelia',flag:'🇩🇿'},
+  {code:'AUT',name:'Austria',flag:'🇦🇹'},{code:'JOR',name:'Jordania',flag:'🇯🇴'},
+  {code:'POR',name:'Portugal',flag:'🇵🇹'},{code:'COD',name:'RD Congo',flag:'🇨🇩'},
+  {code:'UZB',name:'Uzbekistán',flag:'🇺🇿'},{code:'COL',name:'Colombia',flag:'🇨🇴'},
+  {code:'ENG',name:'Inglaterra',flag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿'},{code:'CRO',name:'Croacia',flag:'🇭🇷'},
+  {code:'GHA',name:'Ghana',flag:'🇬🇭'},{code:'PAN',name:'Panamá',flag:'🇵🇦'},
+];
+
+window.resetDuplicates = async function(uid) {
+  const userData = window._adminUsers.find(u => u.uid === uid);
+  const name = userData?.profile?.nickname || userData?.displayName || uid.slice(0,8);
+  if (!confirm(`¿Desmarcar todas las repetidas de ${name}?\n\nEsto dejará cada estampa que tiene en ×1 (conserva las que tiene, elimina las extras).`)) return;
+
+  const stickers = { ...(userData?.stickers || {}) };
+  let changed = 0;
+  for (const code of Object.keys(stickers)) {
+    if (stickers[code] > 1) { stickers[code] = 1; changed++; }
+  }
+  if (changed === 0) { alert('Este usuario no tiene repetidas.'); return; }
+
+  try {
+    const { getFirestore, doc, setDoc } = window._firestoreUtils;
+    await setDoc(doc(window._db, 'users', uid), { stickers }, { merge: true });
+
+    // Update local cache so re-render works
+    const idx = window._adminUsers.findIndex(u => u.uid === uid);
+    if (idx !== -1) window._adminUsers[idx].stickers = stickers;
+
+    // Force re-render of that panel
+    const panel = document.getElementById(`album-${uid}`);
+    if (panel) { delete panel.dataset.rendered; panel.innerHTML = ''; }
+    toggleUserDetail(uid);
+
+    alert(`✅ Listo. Se eliminaron las repetidas de ${changed} estampa(s) de ${name}.`);
+  } catch(e) {
+    console.error(e);
+    alert('❌ Error al guardar: ' + e.message);
+  }
+};
+
+window.toggleUserDetail = function(uid) {
+  const row    = document.getElementById(`detail-${uid}`);
+  const arrow  = document.getElementById(`arrow-${uid}`);
+  const panel  = document.getElementById(`album-${uid}`);
+  const isOpen = row.style.display !== 'none';
+
+  // Close all others
+  document.querySelectorAll('.user-detail-row').forEach(r => r.style.display = 'none');
+  document.querySelectorAll('[id^="arrow-"]').forEach(a => { a.textContent = '▶'; a.style.color = '#333'; });
+
+  if (isOpen) return; // toggle off
+
+  row.style.display = 'table-row';
+  arrow.textContent = '▼';
+  arrow.style.color = 'var(--gold)';
+
+  // Render album if not yet rendered
+  if (panel.dataset.rendered) return;
+  panel.dataset.rendered = '1';
+
+  const userData = window._adminUsers.find(u => u.uid === uid);
+  const stickers = userData?.stickers || {};
+
+  // Summary counts
+  const got  = ALL_CODES.filter(c => (stickers[c]||0) >= 1).length;
+  const dups = ALL_CODES.reduce((s,c) => s + Math.max(0,(stickers[c]||0)-1), 0);
+  const suspicious = ALL_CODES.filter(c => (stickers[c]||0) >= 1 && isSuspicious(c)).map(c => ({ c, n: stickers[c] }));
+
+  let html = `<div style="padding:16px 20px;border-top:1px solid var(--border);background:var(--surface2);">`;
+
+  // Suspicious alert
+  if (suspicious.length > 0) {
+    html += `<div style="background:rgba(224,64,64,0.08);border:1px solid rgba(224,64,64,0.3);border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--red);margin-bottom:8px;">⚠️ ESTAMPAS SOSPECHOSAS — no deberían estar en circulación</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${suspicious.map(({c,n}) => `<span style="font-family:'DM Mono',monospace;font-size:11px;padding:3px 8px;background:rgba(224,64,64,0.15);border:1px solid rgba(224,64,64,0.4);border-radius:4px;color:#ff8080;">${c} ×${n}</span>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // Legend + admin action bar
+  html += `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;color:#555;flex:1;">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle;"></span>Tiene ×1</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--blue);border-radius:2px;margin-right:4px;vertical-align:middle;"></span>×2</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--orange);border-radius:2px;margin-right:4px;vertical-align:middle;"></span>×3+</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--border);border-radius:2px;margin-right:4px;vertical-align:middle;"></span>Falta</span>
+    </div>
+    <button onclick="resetDuplicates('${uid}')" style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:7px 14px;background:rgba(255,96,48,0.12);color:var(--orange);border:1px solid rgba(255,96,48,0.35);border-radius:6px;cursor:pointer;white-space:nowrap;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,96,48,0.25)'" onmouseout="this.style.background='rgba(255,96,48,0.12)'">
+      ↺ Desmarcar repetidas
+    </button>
+  </div>`;
+
+  // Helper to render a group of stickers
+  function stickerDots(codes) {
+    return codes.map(c => {
+      const n = stickers[c] || 0;
+      const bg = n === 0 ? 'var(--border)' : n === 1 ? 'var(--green)' : n === 2 ? 'var(--blue)' : 'var(--orange)';
+      const lbl = c.split(' ').slice(1).join(' ');
+      return `<div title="${c}${n>1?' ×'+n:''}" style="width:22px;height:22px;border-radius:3px;background:${bg};display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:7px;color:${n>0?'#fff':'#555'};position:relative;">
+        ${lbl}${n>1?`<span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--orange);font-size:7px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bg);">${n}</span>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">`;
+
+  // ── Intro / FWC ──
+  const fwcCodes = ['00 1', ...Array.from({length:19},(_,i)=>`FWC ${i+1}`)];
+  const fwcGot = fwcCodes.filter(c => (stickers[c]||0) >= 1).length;
+  html += `<div style="background:var(--surface);border:1px solid ${fwcGot===fwcCodes.length?'var(--green)':'var(--border)'};border-radius:8px;padding:10px 12px;">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+      🏆 Introducción / FWC
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:${fwcGot===fwcCodes.length?'var(--green)':'#444'};margin-left:auto;">${fwcGot}/${fwcCodes.length}${fwcGot===fwcCodes.length?' ✅':''}</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:3px;">${stickerDots(fwcCodes)}</div>
+  </div>`;
+
+  // ── Coca-Cola ──
+  const ccCodes = Array.from({length:14},(_,i)=>`CC ${i+1}`);
+  const ccGot = ccCodes.filter(c => (stickers[c]||0) >= 1).length;
+  html += `<div style="background:var(--surface);border:1px solid ${ccGot===ccCodes.length?'var(--green)':'var(--border)'};border-radius:8px;padding:10px 12px;">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+      🥤 Coca-Cola
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:${ccGot===ccCodes.length?'var(--green)':'#444'};margin-left:auto;">${ccGot}/${ccCodes.length}${ccGot===ccCodes.length?' ✅':''}</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:3px;">${stickerDots(ccCodes)}</div>
+  </div>`;
+
+  // ── Teams ──
+  for (const team of ALL_TEAMS_DEF) {
+    const codes = Array.from({length:20}, (_,i) => `${team.code} ${i+1}`);
+    const teamGot = codes.filter(c => (stickers[c]||0) >= 1).length;
+    const complete = teamGot === 20;
+    html += `<div style="background:var(--surface);border:1px solid ${complete?'var(--green)':'var(--border)'};border-radius:8px;padding:10px 12px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+        ${team.flag} ${team.name}
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:${complete?'var(--green)':'#444'};margin-left:auto;">${teamGot}/20${complete?' ✅':''}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;">${stickerDots(codes)}</div>
+    </div>`;
+  }
+  html += `</div></div>`;
+  panel.innerHTML = html;
+}
+
+// Stickers that shouldn't be in circulation yet
+// (teams not yet officially released — adjust as needed)
+function isSuspicious(code) {
+  return false; // todas las estampas ya están en circulación
+}
+
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('blocked-screen').style.display = 'none';
+}
+function showDashboard() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('blocked-screen').style.display = 'none';
+}
+function showBlocked() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('blocked-screen').style.display = 'flex';
+}
+function showStatus(msg) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+// ═══════════════════════════════════════════════════════════════
+// SHOP ADMIN
+// ═══════════════════════════════════════════════════════════════
+const NEXO_WA_NUMBER = '524621497740'; // update this
+
+const ADMIN_TEAMS = [
+  {code:'MEX',name:'México',flag:'🇲🇽'},{code:'RSA',name:'Sudáfrica',flag:'🇿🇦'},
+  {code:'KOR',name:'Corea del Sur',flag:'🇰🇷'},{code:'CZE',name:'Chequia',flag:'🇨🇿'},
+  {code:'CAN',name:'Canadá',flag:'🇨🇦'},{code:'BIH',name:'Bosnia',flag:'🇧🇦'},
+  {code:'QAT',name:'Qatar',flag:'🇶🇦'},{code:'SUI',name:'Suiza',flag:'🇨🇭'},
+  {code:'BRA',name:'Brasil',flag:'🇧🇷'},{code:'MAR',name:'Marruecos',flag:'🇲🇦'},
+  {code:'HAI',name:'Haití',flag:'🇭🇹'},{code:'SCO',name:'Escocia',flag:'🏴󠁧󠁢󠁳󠁣󠁴󠁿'},
+  {code:'USA',name:'USA',flag:'🇺🇸'},{code:'PAR',name:'Paraguay',flag:'🇵🇾'},
+  {code:'AUS',name:'Australia',flag:'🇦🇺'},{code:'TUR',name:'Turquía',flag:'🇹🇷'},
+  {code:'GER',name:'Alemania',flag:'🇩🇪'},{code:'CUW',name:'Curazao',flag:'🇨🇼'},
+  {code:'CIV',name:'C. Marfil',flag:'🇨🇮'},{code:'ECU',name:'Ecuador',flag:'🇪🇨'},
+  {code:'NED',name:'Países Bajos',flag:'🇳🇱'},{code:'JPN',name:'Japón',flag:'🇯🇵'},
+  {code:'SWE',name:'Suecia',flag:'🇸🇪'},{code:'TUN',name:'Túnez',flag:'🇹🇳'},
+  {code:'BEL',name:'Bélgica',flag:'🇧🇪'},{code:'EGY',name:'Egipto',flag:'🇪🇬'},
+  {code:'IRN',name:'Irán',flag:'🇮🇷'},{code:'NZL',name:'Nueva Zelanda',flag:'🇳🇿'},
+  {code:'ESP',name:'España',flag:'🇪🇸'},{code:'CPV',name:'Cabo Verde',flag:'🇨🇻'},
+  {code:'KSA',name:'Arabia Saudita',flag:'🇸🇦'},{code:'URU',name:'Uruguay',flag:'🇺🇾'},
+  {code:'FRA',name:'Francia',flag:'🇫🇷'},{code:'SEN',name:'Senegal',flag:'🇸🇳'},
+  {code:'IRQ',name:'Irak',flag:'🇮🇶'},{code:'NOR',name:'Noruega',flag:'🇳🇴'},
+  {code:'ARG',name:'Argentina',flag:'🇦🇷'},{code:'ALG',name:'Argelia',flag:'🇩🇿'},
+  {code:'AUT',name:'Austria',flag:'🇦🇹'},{code:'JOR',name:'Jordania',flag:'🇯🇴'},
+  {code:'POR',name:'Portugal',flag:'🇵🇹'},{code:'COD',name:'RD Congo',flag:'🇨🇩'},
+  {code:'UZB',name:'Uzbekistán',flag:'🇺🇿'},{code:'COL',name:'Colombia',flag:'🇨🇴'},
+  {code:'ENG',name:'Inglaterra',flag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿'},{code:'CRO',name:'Croacia',flag:'🇭🇷'},
+  {code:'GHA',name:'Ghana',flag:'🇬🇭'},{code:'PAN',name:'Panamá',flag:'🇵🇦'},
+];
+
+const ADMIN_INTRO = ['00 1', ...Array.from({length:19},(_,i)=>`FWC ${i+1}`)];
+const ADMIN_CC    = Array.from({length:14},(_,i)=>`CC ${i+1}`);
+
+window._shopStock = {};
+let _saveTimer = null;
+
+function isHoloAdmin(code) {
+  if (!code) return false;
+  if (code.startsWith('00 ') || code.startsWith('FWC ')) return true;
+  const parts = code.split(' ');
+  return parts.length === 2 && parts[1] === '1';
+}
+
+async function loadAndRenderShopAdmin() {
+  const panel = document.getElementById('shop-admin-panel');
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:#555;font-size:13px;text-align:center;padding:20px;">Cargando…</p>';
+  try {
+    const snap = await getDoc(doc(db, 'shops', window._sellerUid, 'inventory'));
+    window._shopStock = snap.exists() ? (snap.data().stock || {}) : {};
+    renderShopAdmin();
+  } catch(e) {
+    panel.innerHTML = `<p style="color:var(--red);font-size:13px;padding:12px;">Error: ${e.message}</p>`;
+  }
+}
+
+function renderShopAdmin() {
+  const panel = document.getElementById('shop-admin-panel');
+  if (!panel) return;
+  const stock = window._shopStock;
+  const totalCodes = [...ADMIN_INTRO, ...ADMIN_CC, ...ADMIN_TEAMS.flatMap(t => Array.from({length:20},(_,i)=>`${t.code} ${i+1}`))];
+  const totalInStock = totalCodes.filter(c => (stock[c]||0) > 0).length;
+  const totalQty = totalCodes.reduce((s,c) => s + (stock[c]||0), 0);
+
+  function chipHtml(code) {
+    const qty = stock[code] || 0;
+    const holo = isHoloAdmin(code);
+    const id = code.replace(/ /g,'_');
+    return `<div class="inv-chip ${qty>0?'has-stock':''}" id="ic-${id}">
+      <span class="inv-chip-code">${holo?'✨ ':''}${code.split(' ').slice(-1)[0]}</span>
+      <button class="inv-btn minus" onclick="adjustStock('${code}',-1)">−</button>
+      <input class="inv-input" id="iq-${id}" type="number" min="0" max="99" value="${qty}"
+        onchange="setStock('${code}', this.value)"
+        onkeydown="if(event.key==='Enter'){this.blur();event.preventDefault();}">
+      <button class="inv-btn plus"  onclick="adjustStock('${code}',+1)">+</button>
+    </div>`;
+  }
+
+  let html = `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+    <div><span style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);">${totalInStock}</span><br><span style="font-family:'DM Mono',monospace;font-size:10px;color:#444;letter-spacing:2px;">CÓDIGOS CON STOCK</span></div>
+    <div><span style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--green);">${totalQty}</span><br><span style="font-family:'DM Mono',monospace;font-size:10px;color:#444;letter-spacing:2px;">UNIDADES TOTALES</span></div>
+  </div>`;
+
+  // Intro
+  html += `<div class="inv-section-hdr">🏆 Introducción / FWC</div><div class="inv-grid">`;
+  ADMIN_INTRO.forEach(c => html += chipHtml(c));
+  html += `</div>`;
+
+  // CC
+  html += `<div class="inv-section-hdr">🥤 Coca-Cola</div><div class="inv-grid">`;
+  ADMIN_CC.forEach(c => html += chipHtml(c));
+  html += `</div>`;
+
+  // Teams
+  ADMIN_TEAMS.forEach(t => {
+    const codes = Array.from({length:20},(_,i) => `${t.code} ${i+1}`);
+    const teamQty = codes.reduce((s,c) => s+(stock[c]||0), 0);
+    html += `<div class="inv-section-hdr">${t.flag} ${t.name} <span style="font-family:'DM Mono',monospace;font-size:10px;color:#555;">${teamQty} uds</span></div><div class="inv-grid">`;
+    codes.forEach(c => html += chipHtml(c));
+    html += `</div>`;
+  });
+
+  panel.innerHTML = html;
+}
+
+window.adjustStock = function(code, delta) {
+  const stock = window._shopStock;
+  const cur = stock[code] || 0;
+  const next = Math.max(0, cur + delta);
+  stock[code] = next;
+
+  // Update chip UI instantly
+  const id = code.replace(/ /g, '_');
+  const qtyEl = document.getElementById(`iq-${id}`);
+  const chip  = document.getElementById(`ic-${id}`);
+  if (qtyEl) qtyEl.value = next;
+  if (chip)  chip.classList.toggle('has-stock', next > 0);
+
+  // Debounced save
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock }, { merge: false });
+      const saved = document.getElementById('shop-admin-saved');
+      if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display='none', 2000); }
+    } catch(e) { console.error('save error', e); }
+  }, 600);
+};
+
+window.setStock = function(code, val) {
+  const stock = window._shopStock;
+  const next = Math.max(0, parseInt(val) || 0);
+  stock[code] = next;
+  const id   = code.replace(/ /g, '_');
+  const chip = document.getElementById(`ic-${id}`);
+  const input = document.getElementById(`iq-${id}`);
+  if (chip)  chip.classList.toggle('has-stock', next > 0);
+  if (input) input.value = next;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock }, { merge: false });
+      const saved = document.getElementById('shop-admin-saved');
+      if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display='none', 2000); }
+    } catch(e) { console.error('save error', e); }
+  }, 600);
+};
+
+window.exportShopText = function() {
+  const stock = window._shopStock;
+  const lines = ['🛒 STOCK NEXO — Álbum Panini Mundial 2026', ''];
+
+  function addSection(name, codes) {
+    const inStock = codes.filter(c => (stock[c]||0) > 0);
+    if (inStock.length === 0) return;
+    lines.push(name);
+    inStock.forEach(c => {
+      const qty = stock[c];
+      const holo = isHoloAdmin(c);
+      lines.push(`  ${holo?'✨ ':''}${c}${qty>1?` ×${qty}`:''} — $${holo?10:5}`);
+    });
+    lines.push('');
+  }
+
+  addSection('🏆 Introducción / FWC', ADMIN_INTRO);
+  addSection('🥤 Coca-Cola', ADMIN_CC);
+  ADMIN_TEAMS.forEach(t => {
+    const codes = Array.from({length:20},(_,i) => `${t.code} ${i+1}`);
+    addSection(`${t.flag} ${t.name}`, codes);
+  });
+
+  lines.push('📲 Pide las tuyas por WhatsApp: wa.me/' + NEXO_WA_NUMBER);
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => showStatus('✅ Copiado al portapapeles')).catch(()=>{});
+
+  // Show modal
+  const existing = document.getElementById('export-modal');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'export-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:3px;color:var(--gold);">📋 Stock para compartir</span>
+        <button onclick="document.getElementById('export-modal').remove()" style="background:none;border:none;color:#555;font-size:20px;cursor:pointer;">✕</button>
+      </div>
+      <div style="padding:12px 16px;flex-shrink:0;">
+        <button onclick="navigator.clipboard.writeText(document.getElementById('export-ta').value).then(()=>showStatus('✅ Copiado'))"
+          style="width:100%;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:2px;text-transform:uppercase;padding:10px;background:linear-gradient(135deg,#7030c0,#a060f0);color:white;border:none;border-radius:8px;cursor:pointer;">
+          📋 Copiar todo
+        </button>
+      </div>
+      <textarea id="export-ta" readonly style="flex:1;margin:0 16px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;line-height:1.7;resize:none;outline:none;overflow-y:auto;-webkit-overflow-scrolling:touch;">${text}</textarea>
+    </div>`;
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+window.loadAndRenderShopAdmin = loadAndRenderShopAdmin;
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// CARGA RÁPIDA — selecciona equipo, tap por tap
+// ═══════════════════════════════════════════════════════════════
+const QUICK_SECTIONS = [
+  { id:'FWC', name:'Introducción / FWC', flag:'🏆', codes: ['00 1', ...Array.from({length:19},(_,i)=>`FWC ${i+1}`)] },
+  { id:'CC',  name:'Coca-Cola',          flag:'🥤', codes: Array.from({length:14},(_,i)=>`CC ${i+1}`) },
+  ...ADMIN_TEAMS.map(t => ({ id:t.code, name:t.name, flag:t.flag, codes: Array.from({length:20},(_,i)=>`${t.code} ${i+1}`) }))
+];
+
+let _qlCurrentTeam = null;
+let _voiceRecog    = null;
+let _voiceActive   = false;
+
+// ── QUICK LOAD STATE ─────────────────────────────────────────
+let _qlUndoStack  = []; // { code, prevQty }
+let _saleItems    = []; // { code, qty } for venta nueva
+
+window.openQuickLoad = function(mode = 'add') {
+  window._qlMode   = mode;
+  _qlUndoStack     = [];
+  _saleItems       = [];
+  const existing = document.getElementById('ql-overlay');
+  if (existing) { closeQuickLoad(); return; }
+
+  const isSell     = mode === 'sell';
+  const isVenta    = mode === 'venta';
+  const accentColor= isVenta ? '#d4a820' : isSell ? 'var(--red)' : '#f0a020';
+  const titleText  = isVenta ? '🛍 VENTA NUEVA' : isSell ? '💸 VENTA RÁPIDA' : '⚡ CARGA RÁPIDA';
+  const badgeText  = isVenta ? 'MARCAR VENTA' : isSell ? 'RESTAR -1' : 'SUMAR +1';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'ql-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:1000;display:flex;flex-direction:column;';
+
+  overlay.innerHTML = `
+    <!-- Header -->
+    <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:${accentColor};">${titleText}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:#555;">${badgeText}</span>
+      ${isVenta ? `<span id="venta-total" style="margin-left:auto;font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--green);">$0</span>` : ''}
+      <button onclick="qlUndo()" title="Deshacer última acción"
+        style="background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:#888;font-size:13px;padding:5px 10px;cursor:pointer;${isVenta?'':'margin-left:auto;'}">
+        ↩ Deshacer
+      </button>
+      ${isVenta ? `<button onclick="finalizarVenta()"
+        style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:2px;padding:7px 16px;
+          background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:6px;cursor:pointer;">
+        ✓ FINALIZAR
+      </button>` : ''}
+      <button onclick="closeQuickLoad()" style="background:none;border:none;color:#555;font-size:22px;cursor:pointer;">✕</button>
+    </div>
+
+    <div style="display:flex;flex:1;overflow:hidden;">
+      <!-- Team list -->
+      <div id="ql-team-list" style="width:130px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);-webkit-overflow-scrolling:touch;">
+        ${QUICK_SECTIONS.map(s => `
+          <div class="ql-team-item" onclick="selectQLTeam('${s.id}')" id="qlt-${s.id}"
+            style="padding:9px 10px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;transition:background 0.15s;">
+            <span style="font-size:15px;">${s.flag}</span>
+            <span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;">${s.name}</span>
+          </div>`).join('')}
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <!-- Batch input — only for carga/venta rapida -->
+        ${!isVenta ? `
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;gap:8px;align-items:center;">
+          <input id="ql-batch-input" type="text" placeholder="Ej: 3 7 12 5 18 — Enter para aplicar"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;
+              padding:8px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;"
+            onkeydown="if(event.key==='Enter') qlBatchInput()">
+          <button onclick="qlBatchInput()"
+            style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:8px 16px;
+              background:rgba(240,160,32,0.15);color:#f0a020;border:1px solid rgba(240,160,32,0.4);
+              border-radius:7px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+            ✓ Aplicar
+          </button>
+        </div>` : ''}
+        <!-- Sticker grid -->
+        <div id="ql-sticker-panel" style="flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch;">
+          <p style="color:#444;font-family:'DM Mono',monospace;font-size:12px;text-align:center;margin-top:40px;">← Selecciona un equipo</p>
+        </div>
+      </div>
+    </div>
+
+    ${isVenta ? `
+    <!-- Venta items bar at bottom -->
+    <div id="venta-bar" style="border-top:1px solid var(--border);background:var(--surface);padding:8px 14px;flex-shrink:0;min-height:44px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;overflow-x:auto;">
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:#444;letter-spacing:2px;flex-shrink:0;">SELECCIONADAS:</span>
+      <span id="venta-chips" style="display:flex;gap:5px;flex-wrap:wrap;"></span>
+    </div>` : ''}
+  `;
+
+  document.body.appendChild(overlay);
+  selectQLTeam('MEX');
+};
+
+window.closeQuickLoad = function() {
+  _qlUndoStack = [];
+  _saleItems   = [];
+  const overlay = document.getElementById('ql-overlay');
+  if (overlay) overlay.remove();
+};
+
+// Tap a sticker chip
+window.qlTap = function(code) {
+  const mode   = window._qlMode || 'add';
+  const isSell = mode === 'sell';
+  const isVenta= mode === 'venta';
+  const cur    = window._shopStock[code] || 0;
+
+  if (isVenta) {
+    // Toggle in sale list
+    const idx = _saleItems.findIndex(x => x.code === code);
+    if (idx >= 0) {
+      _saleItems.splice(idx, 1);
+    } else {
+      _saleItems.push({ code });
+    }
+    window.updateVentaChip(code);
+    window.updateVentaBar();
+    return;
+  }
+
+  // Carga rápida / Venta rápida — push undo
+  _qlUndoStack.push({ code, prevQty: cur });
+  if (_qlUndoStack.length > 30) _qlUndoStack.shift();
+
+  const next = isSell ? Math.max(0, cur - 1) : cur + 1;
+  window._shopStock[code] = next;
+  updateQLChip(code, next);
+  scheduleQLSave();
+};
+
+// Undo last action
+window.qlUndo = function() {
+  if (window._qlMode === 'venta') {
+    // Remove last sale item
+    if (_saleItems.length === 0) return;
+    const last = _saleItems.pop();
+    window.updateVentaChip(last.code);
+    window.updateVentaBar();
+    return;
+  }
+  if (_qlUndoStack.length === 0) return;
+  const { code, prevQty } = _qlUndoStack.pop();
+  window._shopStock[code] = prevQty;
+  updateQLChip(code, prevQty);
+  scheduleQLSave();
+  // Re-select team to refresh display
+  const teamId = code.split(' ')[0];
+  // Flash undo feedback
+  const chip = document.getElementById(`qlc-${code.replace(/ /g,'_')}`);
+  if (chip) {
+    chip.style.outline = '3px solid #60d0ff';
+    setTimeout(() => chip.style.outline = '', 600);
+  }
+};
+
+// Venta nueva helpers
+window.updateVentaBar = function() {
+  const chips = document.getElementById('venta-chips');
+  const total = document.getElementById('venta-total');
+  if (!chips) return;
+  chips.innerHTML = _saleItems.map(x => {
+    const holo  = isHoloAdmin(x.code);
+    const price = holo ? 10 : 5;
+    return `<span style="font-family:'DM Mono',monospace;font-size:11px;padding:3px 8px;
+      background:rgba(212,168,32,0.15);border:1px solid rgba(212,168,32,0.4);border-radius:4px;color:#d4a820;">
+      ${x.code} $${price}</span>`;
+  }).join('');
+  const sum = _saleItems.reduce((s,x) => s + (isHoloAdmin(x.code) ? 10 : 5), 0);
+  if (total) total.textContent = '$' + sum;
+};
+
+window.updateVentaChip = function(code) {
+  const el = document.getElementById(`qlc-${code.replace(/ /g,'_')}`);
+  if (!el) return;
+  const inSale = _saleItems.some(x => x.code === code);
+  el.style.outline = inSale ? '3px solid #d4a820' : '';
+  const label = el.querySelector('.venta-label');
+  if (label) label.style.display = inSale ? 'block' : 'none';
+};
+
+// ── MODAL DE DATOS DEL CLIENTE ───────────────────────────────
+function pedirDatosCliente(onConfirm) {
+  const existing = document.getElementById('client-modal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'client-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:380px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,0.7);">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:3px;color:var(--gold);margin-bottom:4px;">📋 Datos del Cliente</div>
+      <p style="font-family:'DM Mono',monospace;font-size:11px;color:#555;margin-bottom:20px;">Opcional — para llevar el control de la venta</p>
+
+      <div style="margin-bottom:14px;">
+        <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">NOMBRE</label>
+        <input id="client-name" type="text" placeholder="Ej: Carlos G."
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;outline:none;">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">TELÉFONO / WHATSAPP</label>
+        <input id="client-phone" type="tel" placeholder="Ej: 477 123 4567"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;outline:none;">
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button onclick="document.getElementById('client-modal').remove()"
+          style="flex:1;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;padding:11px;background:transparent;color:#555;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+          Cancelar
+        </button>
+        <button onclick="confirmarConDatos()"
+          style="flex:2;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;padding:11px;background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
+          ✓ Confirmar Venta
+        </button>
+      </div>
+    </div>`;
+
+  // Store callback
+  window._clientConfirmCb = onConfirm;
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  document.getElementById('client-name').focus();
+}
+
+window.confirmarConDatos = function() {
+  const name  = document.getElementById('client-name')?.value.trim() || '';
+  const phone = document.getElementById('client-phone')?.value.trim() || '';
+  document.getElementById('client-modal').remove();
+  if (window._clientConfirmCb) window._clientConfirmCb({ name, phone });
+};
+
+window.finalizarVenta = async function() {
+  if (_saleItems.length === 0) { alert('No has marcado ninguna estampa'); return; }
+
+  const holos   = _saleItems.filter(x => isHoloAdmin(x.code));
+  const normales = _saleItems.filter(x => !isHoloAdmin(x.code));
+  const total   = holos.length * 10 + normales.length * 5;
+
+  // Quick confirm before showing full receipt
+  // Ask for client data before confirming
+  const itemsSnap = [..._saleItems];
+  pedirDatosCliente(async ({ name, phone }) => {
+    // Descontar del inventario
+    itemsSnap.forEach(x => {
+      window._shopStock[x.code] = Math.max(0, (window._shopStock[x.code] || 0) - 1);
+    });
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
+      await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
+        items: itemsSnap.map(x => ({ code: x.code, price: isHoloAdmin(x.code) ? 10 : 5 })),
+        total, ts: Date.now(),
+        date: new Date().toLocaleDateString('es-MX'),
+        source: 'venta',
+        clientName: name,
+        clientPhone: phone,
+        status: 'completada'
+      });
+      showStatus(`✅ Venta guardada — $${total}`);
+      _saleItems = [];
+      closeQuickLoad();
+      renderShopAdmin();
+      mostrarRecibo(itemsSnap, total, name, phone);
+    } catch(e) { showStatus('❌ Error: ' + e.message); }
+  });
+};
+
+function mostrarRecibo(items, total, clientName = '', clientPhone = '') {
+  const existing = document.getElementById('recibo-overlay');
+  if (existing) existing.remove();
+
+  // Group by team
+  const groups = {};
+  items.forEach(x => {
+    const teamCode = x.code.split(' ')[0];
+    const team = ADMIN_TEAMS.find(t => t.code === teamCode);
+    const teamName = teamCode === 'FWC' || teamCode === '00' ? '🏆 Introducción / FWC'
+                   : teamCode === 'CC' ? '🥤 Coca-Cola'
+                   : team ? `${team.flag} ${team.name}` : teamCode;
+    if (!groups[teamName]) groups[teamName] = [];
+    groups[teamName].push(x);
+  });
+
+  const holos    = items.filter(x => isHoloAdmin(x.code));
+  const normales = items.filter(x => !isHoloAdmin(x.code));
+  const date     = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' });
+  const time     = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+
+  // Build plain text version for copy
+  let textLines = [
+    '🛒 NEXO — PANINI MUNDIAL 2026',
+    `📅 ${date} ${time}`,
+    '─'.repeat(32),
+  ];
+  for (const [teamName, teamItems] of Object.entries(groups)) {
+    textLines.push('');
+    textLines.push(teamName);
+    const holoItems = teamItems.filter(x => isHoloAdmin(x.code));
+    const normItems = teamItems.filter(x => !isHoloAdmin(x.code));
+    if (normItems.length) textLines.push(`  Normales: ${normItems.map(x=>x.code.split(' ')[1]).join(', ')} × $5`);
+    if (holoItems.length) textLines.push(`  ✨ Holos: ${holoItems.map(x=>x.code.split(' ')[1]).join(', ')} × $10`);
+  }
+  textLines.push('');
+  textLines.push('─'.repeat(32));
+  textLines.push(`📦 Total estampas: ${items.length}  (${normales.length} normales + ${holos.length} holos)`);
+  textLines.push(`💵 Normales ${normales.length} × $5 = $${normales.length*5}`);
+  textLines.push(`✨ Holos    ${holos.length} × $10 = $${holos.length*10}`);
+  textLines.push(`─`.repeat(32));
+  textLines.push(`💰 TOTAL: $${total}`);
+  const plainText = textLines.join('\n');
+
+  // Build HTML receipt
+  let groupsHtml = '';
+  for (const [teamName, teamItems] of Object.entries(groups)) {
+    const holoItems = teamItems.filter(x => isHoloAdmin(x.code));
+    const normItems = teamItems.filter(x => !isHoloAdmin(x.code));
+    groupsHtml += `<div style="margin-bottom:12px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;color:var(--gold);margin-bottom:6px;">${teamName}</div>
+      ${normItems.length ? `<div style="margin-bottom:4px;">
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:#555;">NORMALES × $5 · </span>
+        ${normItems.map(x=>`<span style="font-family:'DM Mono',monospace;font-size:12px;padding:2px 6px;background:rgba(255,255,255,0.05);border-radius:3px;">${x.code.split(' ')[1]}</span>`).join(' ')}
+      </div>` : ''}
+      ${holoItems.length ? `<div>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:#a07010;">✨ HOLOS × $10 · </span>
+        ${holoItems.map(x=>`<span style="font-family:'DM Mono',monospace;font-size:12px;padding:2px 6px;background:rgba(212,168,32,0.1);border:1px solid rgba(212,168,32,0.3);border-radius:3px;color:#d4a820;">${x.code.split(' ')[1]}</span>`).join(' ')}
+      </div>` : ''}
+    </div>`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'recibo-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:460px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.7);">
+      <!-- Header -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:var(--green);">✅ VENTA COMPLETADA</div>
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:#444;">${date} · ${time}</div>
+          ${clientName ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#888;margin-top:3px;">👤 ${clientName}${clientPhone?' · 📱 '+clientPhone:''}</div>` : ''}
+        </div>
+        <button onclick="document.getElementById('recibo-overlay').remove()" style="background:none;border:none;color:#555;font-size:22px;cursor:pointer;">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div style="flex:1;overflow-y:auto;padding:16px 20px;-webkit-overflow-scrolling:touch;">
+        ${groupsHtml}
+      </div>
+
+      <!-- Totals -->
+      <div style="padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2);border-radius:0 0 16px 16px;flex-shrink:0;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-family:'DM Mono',monospace;font-size:11px;color:#555;">📦 ${items.length} estampas (${normales.length} normales + ${holos.length} holos)</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#888;">Normales ${normales.length} × $5</span>
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:#888;">$${normales.length*5}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#a07010;">✨ Holos ${holos.length} × $10</span>
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:#a07010;">$${holos.length*10}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);">
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--text);">TOTAL</span>
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--green);">$${total}</span>
+        </div>
+        <!-- Actions -->
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button onclick="navigator.clipboard.writeText(${JSON.stringify(plainText)}).then(()=>showStatus('✅ Copiado'))"
+            style="flex:1;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;
+              padding:10px;background:rgba(160,96,240,0.15);color:var(--gold);border:1px solid rgba(160,96,240,0.4);
+              border-radius:8px;cursor:pointer;">
+            📋 Copiar texto
+          </button>
+          <button onclick="generarReciboTexto()"
+            style="flex:1;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;
+              padding:10px;background:rgba(48,192,96,0.15);color:var(--green);border:1px solid rgba(48,192,96,0.4);
+              border-radius:8px;cursor:pointer;">
+            📄 Ver texto
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  // Store plain text for the text viewer
+  window._lastReciboText = plainText;
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+window.generarReciboTexto = function() {
+  const text = window._lastReciboText || '';
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:90%;max-width:460px;height:70vh;background:#111;color:#eee;border:1px solid #333;border-radius:12px;padding:16px;font-family:DM Mono,monospace;font-size:12px;line-height:1.8;z-index:3000;resize:none;outline:none;';
+  ta.readOnly = true;
+  document.body.appendChild(ta);
+  ta.select();
+  setTimeout(() => ta.remove(), 15000);
+  navigator.clipboard.writeText(text).then(() => showStatus('✅ Copiado al portapapeles'));
+};
+
+
+
+window.selectQLTeam = function(id) {
+  _qlCurrentTeam = id;
+  document.querySelectorAll('.ql-team-item').forEach(el => el.style.background = '');
+  const selected = document.getElementById(`qlt-${id}`);
+  if (selected) selected.style.background = 'rgba(240,160,32,0.12)';
+  const sec = QUICK_SECTIONS.find(s => s.id === id);
+  if (!sec) return;
+  const panel = document.getElementById('ql-sticker-panel');
+  if (!panel) return;
+  const stock    = window._shopStock;
+  const mode     = window._qlMode || 'add';
+  const isVenta  = mode === 'venta';
+  const isSell   = mode === 'sell';
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:3px;color:white;">${sec.flag} ${sec.name}</span>
+      ${!isVenta ? `<button onclick="qlSetAll('${id}', 0)" style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;padding:4px 10px;background:rgba(224,64,64,0.15);color:var(--red);border:1px solid rgba(224,64,64,0.3);border-radius:5px;cursor:pointer;">✕ Vaciar</button>` : ''}
+      ${isVenta ? `<span style="font-family:'DM Mono',monospace;font-size:10px;color:#555;">Toca para marcar · toca de nuevo para desmarcar</span>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:10px;">`;
+
+  for (const code of sec.codes) {
+    const qty    = stock[code] || 0;
+    const holo   = isHoloAdmin(code);
+    const num    = code.split(' ').slice(1).join(' ');
+    const price  = holo ? 10 : 5;
+    const inSale = isVenta && _saleItems.some(x => x.code === code);
+
+    let bg, border, color;
+    if (isVenta) {
+      bg     = inSale ? 'rgba(212,168,32,0.25)' : qty===0 ? '#0a0a0a' : 'var(--surface2)';
+      border = inSale ? '#d4a820' : qty===0 ? '#1a1a1a' : 'var(--border)';
+      color  = inSale ? '#d4a820' : qty===0 ? '#222' : '#888';
+    } else {
+      bg     = qty===0?'var(--surface2)':qty===1?'rgba(48,192,96,0.15)':qty===2?'rgba(48,128,232,0.15)':'rgba(255,96,48,0.15)';
+      border = qty===0?'var(--border)':qty===1?'rgba(48,192,96,0.5)':qty===2?'rgba(48,128,232,0.5)':'rgba(255,96,48,0.5)';
+      color  = qty===0?'#333':qty===1?'var(--green)':qty===2?'var(--blue)':'var(--orange)';
+    }
+
+    html += `
+      <div id="qlc-${code.replace(/ /g,'_')}" onclick="qlTap('${code}')"
+        style="background:${bg};border:2px solid ${border};border-radius:12px;
+          padding:14px 6px 10px;text-align:center;cursor:pointer;
+          transition:all 0.1s;user-select:none;-webkit-tap-highlight-color:transparent;
+          ${isVenta && qty===0 ? 'opacity:0.25;' : ''}
+          ${inSale ? 'outline:3px solid #d4a820;' : ''}">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:#555;margin-bottom:6px;">
+          ${holo?'✨ ':''}${num}
+        </div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;line-height:1;color:${color};">
+          ${isVenta ? (inSale ? '✓' : (qty > 0 ? num : '—')) : qty}
+        </div>
+        ${isVenta ? `<div style="font-family:'DM Mono',monospace;font-size:9px;color:#555;margin-top:4px;">$${price} · ×${qty}</div>` : ''}
+        <div class="venta-label" style="display:${inSale?'block':'none'};font-family:'Barlow Condensed',sans-serif;font-size:10px;color:#d4a820;margin-top:4px;letter-spacing:1px;">MARCADA</div>
+      </div>`;
+  }
+  html += `</div>`;
+  panel.innerHTML = html;
+};
+
+window.qlTap = function(code) {
+  const mode    = window._qlMode || 'add';
+  const isVenta = mode === 'venta';
+  const isSell  = mode === 'sell';
+  const cur     = window._shopStock[code] || 0;
+
+  if (isVenta) {
+    // Toggle in sale list
+    const idx = _saleItems.findIndex(x => x.code === code);
+    if (idx >= 0) {
+      _saleItems.splice(idx, 1);
+    } else {
+      _saleItems.push({ code });
+    }
+    window.updateVentaChip(code);
+    window.updateVentaBar();
+    return;
+  }
+
+  // Carga rápida / Venta rápida
+  _qlUndoStack.push({ code, prevQty: cur });
+  if (_qlUndoStack.length > 30) _qlUndoStack.shift();
+
+  const next = isSell ? Math.max(0, cur - 1) : cur + 1;
+  window._shopStock[code] = next;
+  updateQLChip(code, next);
+  scheduleQLSave();
+};
+
+window.qlBatchInput = function() {
+  if (!_qlCurrentTeam) { return; }
+  const input = document.getElementById('ql-batch-input');
+  if (!input) return;
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const sec  = QUICK_SECTIONS.find(s => s.id === _qlCurrentTeam);
+  if (!sec) return;
+
+  // Parse numbers from input — space, comma or slash separated
+  const nums = raw.split(/[\s,/]+/).map(n => parseInt(n)).filter(n => !isNaN(n) && n >= 1 && n <= sec.codes.length);
+  if (nums.length === 0) { showStatus('⚠️ No se encontraron números válidos'); return; }
+
+  const isSell = window._qlMode === 'sell';
+  let applied = 0;
+
+  nums.forEach(num => {
+    const code = sec.codes[num - 1];
+    if (!code) return;
+    const cur  = window._shopStock[code] || 0;
+    _qlUndoStack.push({ code, prevQty: cur });
+    const next = isSell ? Math.max(0, cur - 1) : cur + 1;
+    window._shopStock[code] = next;
+    updateQLChip(code, next);
+    applied++;
+  });
+
+  if (_qlUndoStack.length > 50) _qlUndoStack.splice(0, _qlUndoStack.length - 50);
+  scheduleQLSave();
+  input.value = '';
+  showStatus(`✅ ${applied} estampa(s) ${isSell ? 'restadas' : 'sumadas'}`);
+};
+
+window.qlSetAll = function(teamId, val) {
+  const sec = QUICK_SECTIONS.find(s => s.id === teamId);
+  if (!sec) return;
+  sec.codes.forEach(code => { window._shopStock[code] = val; updateQLChip(code, val); });
+  scheduleQLSave();
+};
+
+function updateQLChip(code, qty) {
+  const el = document.getElementById(`qlc-${code.replace(/ /g,'_')}`);
+  if (el) {
+    const bg     = qty===0?'var(--surface2)':qty===1?'rgba(48,192,96,0.15)':qty===2?'rgba(48,128,232,0.15)':'rgba(255,96,48,0.15)';
+    const border = qty===0?'var(--border)'  :qty===1?'rgba(48,192,96,0.5)' :qty===2?'rgba(48,128,232,0.5)' :'rgba(255,96,48,0.5)';
+    const color  = qty===0?'#333':qty===1?'var(--green)':qty===2?'var(--blue)':'var(--orange)';
+    el.style.background  = bg;
+    el.style.borderColor = border;
+    // The qty display is the second div child
+    const divs = el.querySelectorAll('div');
+    if (divs[1]) { divs[1].style.color = color; divs[1].textContent = qty; }
+    // Flash animation
+    el.style.transform = 'scale(1.12)';
+    setTimeout(() => el.style.transform = '', 150);
+  }
+  const mainInput = document.getElementById(`iq-${code.replace(/ /g,'_')}`);
+  const mainChip  = document.getElementById(`ic-${code.replace(/ /g,'_')}`);
+  if (mainInput) mainInput.value = qty;
+  if (mainChip)  mainChip.classList.toggle('has-stock', qty > 0);
+}
+
+let _qlSaveTimer = null;
+function scheduleQLSave() {
+  clearTimeout(_qlSaveTimer);
+  _qlSaveTimer = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
+      const saved = document.getElementById('shop-admin-saved');
+      if (saved) { saved.style.display='inline'; setTimeout(()=>saved.style.display='none',2000); }
+    } catch(e) { console.error(e); }
+  }, 800);
+}
+
+window.openQuickLoad   = window.openQuickLoad;
+window.selectQLTeam    = window.selectQLTeam;
+window.qlTap           = window.qlTap;
+window.qlSetAll        = window.qlSetAll;
+
+// ═══════════════════════════════════════════════════════════════
+// ESCÁNER OCR — lee nomenclatura de estampas con la cámara
+// ═══════════════════════════════════════════════════════════════
+const VALID_CODES_SET = new Set([
+  '00 1',
+  ...Array.from({length:19}, (_,i) => `FWC ${i+1}`),
+  ...Array.from({length:14}, (_,i) => `CC ${i+1}`),
+  ...ADMIN_TEAMS.flatMap(t => Array.from({length:20}, (_,i) => `${t.code} ${i+1}`))
+]);
+
+let _scanStream    = null;
+let _scanWorker    = null;
+let _scanActive    = false;
+let _scanLoop      = null;
+let _lastDetected  = null;
+let _confirmTimer  = null;
+
+window.openScanner = async function() {
+  const existing = document.getElementById('scanner-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'scanner-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2000;display:flex;flex-direction:column;';
+  overlay.innerHTML = `
+    <div style="padding:14px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;background:rgba(0,0,0,0.8);border-bottom:1px solid #222;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:#60d0ff;">📷 ESCÁNER</span>
+      <span id="scan-status" style="font-family:'DM Mono',monospace;font-size:11px;color:#555;">Iniciando cámara…</span>
+      <button onclick="closeScanner()" style="margin-left:auto;background:none;border:none;color:#555;font-size:22px;cursor:pointer;">✕</button>
+    </div>
+
+    <!-- Video feed -->
+    <div style="position:relative;flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;">
+      <video id="scan-video" autoplay playsinline muted
+        style="width:100%;height:100%;object-fit:cover;"></video>
+      <!-- Targeting reticle -->
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+        <div style="width:280px;height:100px;border:2px solid rgba(96,208,255,0.7);border-radius:8px;box-shadow:0 0 0 2000px rgba(0,0,0,0.45);">
+          <div style="position:absolute;top:-1px;left:-1px;width:20px;height:20px;border-top:3px solid #60d0ff;border-left:3px solid #60d0ff;border-radius:4px 0 0 0;"></div>
+          <div style="position:absolute;top:-1px;right:-1px;width:20px;height:20px;border-top:3px solid #60d0ff;border-right:3px solid #60d0ff;border-radius:0 4px 0 0;"></div>
+          <div style="position:absolute;bottom:-1px;left:-1px;width:20px;height:20px;border-bottom:3px solid #60d0ff;border-left:3px solid #60d0ff;border-radius:0 0 0 4px;"></div>
+          <div style="position:absolute;bottom:-1px;right:-1px;width:20px;height:20px;border-bottom:3px solid #60d0ff;border-right:3px solid #60d0ff;border-radius:0 0 4px 0;"></div>
+        </div>
+      </div>
+      <!-- Confirm overlay -->
+      <div id="scan-confirm" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;color:#aaa;">¿ES ESTA ESTAMPA?</div>
+        <div id="scan-detected-code" style="font-family:'Bebas Neue',sans-serif;font-size:52px;letter-spacing:4px;color:#60d0ff;text-align:center;"></div>
+        <div id="scan-current-qty" style="font-family:'DM Mono',monospace;font-size:13px;color:#555;"></div>
+        <div style="display:flex;gap:16px;margin-top:8px;">
+          <button onclick="scanConfirm(false)"
+            style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:14px 32px;background:rgba(224,64,64,0.2);color:var(--red);border:2px solid rgba(224,64,64,0.5);border-radius:10px;cursor:pointer;min-width:120px;">
+            ✕ No
+          </button>
+          <button onclick="scanConfirm(true)"
+            style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:14px 32px;background:rgba(48,192,96,0.2);color:var(--green);border:2px solid rgba(48,192,96,0.5);border-radius:10px;cursor:pointer;min-width:120px;">
+            ✓ Sí +1
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log of scanned stickers -->
+    <div style="background:rgba(0,0,0,0.9);border-top:1px solid #222;padding:10px 16px;flex-shrink:0;max-height:140px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:#333;letter-spacing:2px;margin-bottom:6px;">ESCANEADAS EN ESTA SESIÓN</div>
+      <div id="scan-log" style="display:flex;flex-wrap:wrap;gap:6px;">
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:#333;font-style:italic;">Ninguna aún…</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Start camera
+  try {
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('scan-video');
+    video.srcObject = _scanStream;
+    await video.play();
+    setScanStatus('Apunta a la nomenclatura de la estampa', '#60d0ff');
+
+    // Init Tesseract worker
+    _scanWorker = await Tesseract.createWorker('eng', 1, {
+      logger: () => {}
+    });
+    await _scanWorker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+      tessedit_pageseg_mode: '7', // single line
+    });
+
+    _scanActive = true;
+    startScanLoop();
+  } catch(e) {
+    setScanStatus('Error: ' + e.message, 'var(--red)');
+  }
+};
+
+function setScanStatus(msg, color = '#555') {
+  const el = document.getElementById('scan-status');
+  if (el) { el.textContent = msg; el.style.color = color; }
+}
+
+function startScanLoop() {
+  const video   = document.getElementById('scan-video');
+  const canvas  = document.createElement('canvas');
+  const ctx     = canvas.getContext('2d');
+  let processing = false;
+
+  async function frame() {
+    if (!_scanActive) return;
+    _scanLoop = requestAnimationFrame(frame);
+    if (processing || !video || video.readyState < 2) return;
+
+    // Only process every 800ms to not kill the CPU
+    if (frame._lastTime && Date.now() - frame._lastTime < 800) return;
+    frame._lastTime = Date.now();
+    processing = true;
+
+    try {
+      // Crop to the reticle area (center 280×100)
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const cropW = Math.round(vw * 0.55);
+      const cropH = Math.round(vh * 0.22);
+      const cropX = Math.round((vw - cropW) / 2);
+      const cropY = Math.round((vh - cropH) / 2);
+
+      canvas.width  = cropW;
+      canvas.height = cropH;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // Enhance contrast for better OCR
+      ctx.filter = 'contrast(2) brightness(1.2)';
+      ctx.drawImage(canvas, 0, 0);
+
+      const { data: { text } } = await _scanWorker.recognize(canvas);
+      const detected = parseCode(text);
+
+      if (detected && detected !== _lastDetected) {
+        _lastDetected = detected;
+        showScanConfirm(detected);
+      }
+    } catch(e) {}
+    processing = false;
+  }
+  requestAnimationFrame(frame);
+}
+
+function parseCode(rawText) {
+  // Clean and normalize
+  const text = rawText.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Try to match known patterns: 2-3 letters + space + 1-2 digits
+  const matches = text.match(/\b([A-Z]{2,3})\s*(\d{1,2})\b/g);
+  if (!matches) return null;
+
+  for (const m of matches) {
+    const normalized = m.replace(/\s+/,' ').trim();
+    const parts = normalized.match(/^([A-Z]{2,3})\s*(\d{1,2})$/);
+    if (!parts) continue;
+    const candidate = `${parts[1]} ${parseInt(parts[2])}`;
+    if (VALID_CODES_SET.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+function showScanConfirm(code) {
+  const confirmEl = document.getElementById('scan-confirm');
+  const codeEl    = document.getElementById('scan-detected-code');
+  const qtyEl     = document.getElementById('scan-current-qty');
+  if (!confirmEl || !codeEl) return;
+
+  const currentQty = window._shopStock[code] || 0;
+  codeEl.textContent = code;
+  qtyEl.textContent  = `Stock actual: ${currentQty}`;
+  confirmEl.style.display = 'flex';
+
+  // Auto-confirm after 3s if user doesn't tap
+  clearTimeout(_confirmTimer);
+  _confirmTimer = setTimeout(() => scanConfirm(true), 3000);
+}
+
+window.scanConfirm = function(yes) {
+  clearTimeout(_confirmTimer);
+  const confirmEl = document.getElementById('scan-confirm');
+  const codeEl    = document.getElementById('scan-detected-code');
+  if (confirmEl) confirmEl.style.display = 'none';
+
+  if (yes && _lastDetected) {
+    const code = _lastDetected;
+    const next = (window._shopStock[code] || 0) + 1;
+    window._shopStock[code] = next;
+
+    // Update main grid if visible
+    const mainInput = document.getElementById(`iq-${code.replace(/ /g,'_')}`);
+    const mainChip  = document.getElementById(`ic-${code.replace(/ /g,'_')}`);
+    if (mainInput) mainInput.value = next;
+    if (mainChip)  mainChip.classList.toggle('has-stock', next > 0);
+
+    // Add to session log
+    addToScanLog(code, next);
+
+    // Save debounced
+    scheduleQLSave();
+
+    // Flash green feedback
+    setScanStatus(`✓ ${code} → ×${next}`, 'var(--green)');
+    setTimeout(() => setScanStatus('Apunta a la siguiente estampa', '#60d0ff'), 1500);
+  } else {
+    setScanStatus('Apunta a la estampa', '#60d0ff');
+  }
+
+  _lastDetected = null;
+};
+
+function addToScanLog(code, qty) {
+  const log = document.getElementById('scan-log');
+  if (!log) return;
+  // Remove "ninguna" placeholder
+  const placeholder = log.querySelector('span[style*="font-style:italic"]');
+  if (placeholder) placeholder.remove();
+
+  const existing = log.querySelector(`[data-code="${code}"]`);
+  if (existing) {
+    existing.textContent = `${code} ×${qty}`;
+  } else {
+    const chip = document.createElement('span');
+    chip.dataset.code = code;
+    chip.textContent  = `${code} ×${qty}`;
+    chip.style.cssText = 'font-family:"DM Mono",monospace;font-size:11px;padding:3px 8px;background:rgba(96,208,255,0.12);border:1px solid rgba(96,208,255,0.3);border-radius:4px;color:#60d0ff;';
+    log.appendChild(chip);
+  }
+}
+
+window.closeScanner = function() {
+  _scanActive = false;
+  clearTimeout(_confirmTimer);
+  if (_scanLoop) cancelAnimationFrame(_scanLoop);
+  if (_scanStream) { _scanStream.getTracks().forEach(t => t.stop()); _scanStream = null; }
+  if (_scanWorker) { _scanWorker.terminate(); _scanWorker = null; }
+  _lastDetected = null;
+  const overlay = document.getElementById('scanner-overlay');
+  if (overlay) overlay.remove();
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ESTAMPAS ESPECIALES
+// ═══════════════════════════════════════════════════════════════
+window.openSpecialsAdmin = async function() {
+  const existing = document.getElementById('specials-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'specials-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:1000;display:flex;flex-direction:column;backdrop-filter:blur(6px);';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:#d4a820;">⭐ ESTAMPAS ESPECIALES</span>
+      <button onclick="document.getElementById('specials-overlay').remove()" style="margin-left:auto;background:none;border:none;color:#555;font-size:22px;cursor:pointer;">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px;-webkit-overflow-scrolling:touch;">
+
+      <!-- Add new special -->
+      <div style="background:var(--surface);border:1px solid rgba(212,168,32,0.3);border-radius:12px;padding:18px;margin-bottom:20px;">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:#d4a820;margin-bottom:14px;">+ AGREGAR ESTAMPA ESPECIAL</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div>
+            <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">CÓDIGO (ej: ARG 14)</label>
+            <input id="sp-code" type="text" placeholder="ARG 14"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;outline:none;text-transform:uppercase;">
+          </div>
+          <div>
+            <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">NOMBRE</label>
+            <input id="sp-name" type="text" placeholder="Lionel Messi"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'Barlow',sans-serif;font-size:13px;outline:none;">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div>
+            <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">PRECIO ($)</label>
+            <input id="sp-price" type="number" placeholder="50" min="1"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:20px;outline:none;">
+          </div>
+          <div>
+            <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:5px;">FOTO</label>
+            <input id="sp-photo" type="file" accept="image/*"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:#888;font-family:'Barlow Condensed',sans-serif;font-size:12px;cursor:pointer;">
+          </div>
+        </div>
+        <!-- Preview -->
+        <div id="sp-preview" style="display:none;margin-bottom:12px;text-align:center;">
+          <img id="sp-preview-img" style="max-height:140px;border-radius:8px;border:1px solid var(--border);">
+        </div>
+        <button onclick="saveSpecial()"
+          style="width:100%;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;padding:12px;
+            background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
+          ⭐ Guardar Especial
+        </button>
+      </div>
+
+      <!-- Existing specials -->
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:#555;margin-bottom:12px;">ESPECIALES ACTUALES</div>
+      <div id="specials-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+        <p style="color:#444;font-size:12px;">Cargando…</p>
+      </div>
+    </div>`;
+
+  // Photo preview
+  overlay.querySelector('#sp-photo').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('sp-preview').style.display = 'block';
+      document.getElementById('sp-preview-img').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.body.appendChild(overlay);
+  loadSpecialsList();
+};
+
+async function loadSpecialsList() {
+  const listEl = document.getElementById('specials-list');
+  if (!listEl) return;
+  try {
+    const snap = await getDocs(collection(db, 'shops', window._sellerUid, 'specials'));
+    if (snap.empty) { listEl.innerHTML = '<p style="color:#444;font-size:12px;font-style:italic;">No hay especiales aún.</p>'; return; }
+    listEl.innerHTML = '';
+    snap.forEach(d => {
+      const s = d.data();
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface);border:1px solid rgba(212,168,32,0.3);border-radius:10px;overflow:hidden;position:relative;';
+      card.innerHTML = `
+        <img src="${s.imageB64}" style="width:100%;height:120px;object-fit:cover;display:block;">
+        <div style="padding:10px;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;color:#d4a820;">${s.code}</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:var(--text);margin:2px 0;">${s.name}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--green);">$${s.price}</div>
+          <button onclick="deleteSpecial('${d.id}')"
+            style="width:100%;margin-top:8px;padding:6px;background:rgba(224,64,64,0.1);border:1px solid rgba(224,64,64,0.3);
+              border-radius:6px;color:var(--red);font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;
+              letter-spacing:1px;cursor:pointer;">
+            🗑 Eliminar
+          </button>
+        </div>`;
+      listEl.appendChild(card);
+    });
+  } catch(e) { listEl.innerHTML = `<p style="color:var(--red);font-size:12px;">${e.message}</p>`; }
+}
+
+window.saveSpecial = async function() {
+  const code  = document.getElementById('sp-code')?.value.trim().toUpperCase();
+  const name  = document.getElementById('sp-name')?.value.trim();
+  const price = parseInt(document.getElementById('sp-price')?.value);
+  const file  = document.getElementById('sp-photo')?.files[0];
+
+  if (!code || !name || !price || !file) { showStatus('⚠️ Completa todos los campos'); return; }
+
+  showStatus('Comprimiendo imagen…');
+  try {
+    const imageB64 = await compressImage(file, 600, 0.75);
+    await addDoc(collection(db, 'shops', window._sellerUid, 'specials'), {
+      code, name, price, imageB64, ts: Date.now()
+    });
+    // Clear form
+    document.getElementById('sp-code').value  = '';
+    document.getElementById('sp-name').value  = '';
+    document.getElementById('sp-price').value = '';
+    document.getElementById('sp-photo').value = '';
+    document.getElementById('sp-preview').style.display = 'none';
+    showStatus('✅ Especial guardada');
+    loadSpecialsList();
+  } catch(e) { showStatus('❌ Error: ' + e.message); }
+};
+
+window.deleteSpecial = async function(id) {
+  if (!confirm('¿Eliminar esta estampa especial?')) return;
+  try {
+    await deleteDoc(doc(db, 'shops', window._sellerUid, 'specials', id));
+    showStatus('🗑 Eliminada');
+    loadSpecialsList();
+  } catch(e) { showStatus('❌ Error: ' + e.message); }
+};
+
+function compressImage(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > h && w > maxSize) { h = h * maxSize / w; w = maxSize; }
+      else if (h > maxSize)     { w = w * maxSize / h; h = maxSize; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IA PASTE + HISTORIAL DE VENTAS
+// ═══════════════════════════════════════════════════════════════
+
+function parseClientList(raw) {
+  // Parses formats like:
+  //   MEX 🇲🇽: 3, 7, 12
+  //   MEX 3, MEX 7
+  //   MEX: 3 7 12
+  const codes = [];
+  const seen  = new Set();
+
+  // Try line-by-line format first: CODE [anything]: num, num
+  const lines = raw.split('\n');
+  for (const line of lines) {
+    const lineUp = line.toUpperCase();
+    // Extract team code (2-3 letters at start)
+    const teamMatch = lineUp.match(/^([A-Z]{2,3})/);
+    if (teamMatch) {
+      const team = teamMatch[1];
+      // Extract all numbers from the rest of the line
+      const nums = line.match(/\d{1,2}/g) || [];
+      for (const n of nums) {
+        const code = `${team} ${parseInt(n)}`;
+        if (!seen.has(code)) { seen.add(code); codes.push(code); }
+      }
+      continue;
+    }
+    // Fallback: inline format MEX 3, ARG 14
+    const inline = lineUp.match(/\b([A-Z]{2,3})\s+(\d{1,2})\b/g) || [];
+    for (const m of inline) {
+      const normalized = m.replace(/\s+/,' ').trim();
+      if (!seen.has(normalized)) { seen.add(normalized); codes.push(normalized); }
+    }
+  }
+  return codes;
+}
+
+window.previewIAPaste = function() {
+  const raw     = document.getElementById('ia-paste-input')?.value || '';
+  const preview = document.getElementById('ia-preview');
+  const chipsEl = document.getElementById('ia-chips');
+  const totalEl = document.getElementById('ia-total');
+  const matchEl = document.getElementById('ia-match-count');
+  const noMatchEl = document.getElementById('ia-nomatch-count');
+  if (!preview) return;
+
+  const allCodes = parseClientList(raw);
+  if (allCodes.length === 0) { preview.style.display = 'none'; return; }
+  preview.style.display = 'block';
+
+  const matches   = allCodes.filter(c => (window._shopStock[c]||0) > 0);
+  const noMatches = allCodes.filter(c => (window._shopStock[c]||0) === 0);
+  const total     = matches.reduce((s,c) => s + (isHoloAdmin(c) ? 10 : 5), 0);
+
+  if (matchEl)   matchEl.textContent   = matches.length;
+  if (noMatchEl) noMatchEl.textContent = noMatches.length;
+  if (totalEl)   totalEl.textContent   = '$' + total;
+
+  // Group matches by team
+  const groups = {};
+  for (const code of matches) {
+    const team = code.split(' ')[0];
+    if (!groups[team]) groups[team] = [];
+    groups[team].push(code);
+  }
+
+  let html = '';
+
+  // Matches section
+  if (matches.length > 0) {
+    html += `<div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;color:var(--green);margin-bottom:8px;">✅ EN STOCK — SE PUEDEN VENDER</div>`;
+    for (const [team, teamCodes] of Object.entries(groups)) {
+      const teamDef  = ADMIN_TEAMS.find(t => t.code === team);
+      const teamName = teamDef ? `${teamDef.flag} ${teamDef.name}` : team;
+      const holos    = teamCodes.filter(c => isHoloAdmin(c));
+      const normales = teamCodes.filter(c => !isHoloAdmin(c));
+      html += `<div style="background:rgba(48,192,96,0.06);border:1px solid rgba(48,192,96,0.2);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">${teamName}</div>
+        ${normales.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;align-self:center;">$5 · </span>
+          ${normales.map(c=>`<span style="font-family:'DM Mono',monospace;font-size:11px;padding:2px 7px;background:rgba(48,192,96,0.12);border:1px solid rgba(48,192,96,0.3);border-radius:4px;color:var(--green);">${c.split(' ')[1]}</span>`).join('')}
+        </div>` : ''}
+        ${holos.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;">
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:#a07010;align-self:center;">✨ $10 · </span>
+          ${holos.map(c=>`<span style="font-family:'DM Mono',monospace;font-size:11px;padding:2px 7px;background:rgba(212,168,32,0.12);border:1px solid rgba(212,168,32,0.35);border-radius:4px;color:#d4a820;">${c.split(' ')[1]}</span>`).join('')}
+        </div>` : ''}
+      </div>`;
+    }
+  }
+
+  // No-match section
+  if (noMatches.length > 0) {
+    html += `<div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;color:var(--red);margin:12px 0 8px;">❌ SIN STOCK</div>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:5px;">`;
+    html += noMatches.map(c => `<span style="font-family:'DM Mono',monospace;font-size:11px;padding:2px 7px;background:rgba(224,64,64,0.08);border:1px solid rgba(224,64,64,0.25);border-radius:4px;color:var(--red);opacity:0.7;">${c}</span>`).join('');
+    html += `</div>`;
+  }
+
+  chipsEl.innerHTML = html;
+  // Store for generarVentaIA
+  window._iaCodes = matches;
+};
+
+window.generarVentaIA = async function() {
+  const validCodes = window._iaCodes || [];
+  if (validCodes.length === 0) { showStatus('⚠️ No hay coincidencias para vender'); return; }
+
+  const holos    = validCodes.filter(c => isHoloAdmin(c));
+  const normales = validCodes.filter(c => !isHoloAdmin(c));
+  const total    = normales.length * 5 + holos.length * 10;
+
+  const codesSnap = [...validCodes];
+  pedirDatosCliente(async ({ name, phone }) => {
+    codesSnap.forEach(c => {
+      window._shopStock[c] = Math.max(0, (window._shopStock[c]||0) - 1);
+    });
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
+      await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
+        items: codesSnap.map(c => ({ code: c, price: isHoloAdmin(c) ? 10 : 5 })),
+        total, ts: Date.now(),
+        date: new Date().toLocaleDateString('es-MX'),
+        source: 'lista',
+        clientName: name,
+        clientPhone: phone,
+        status: 'completada'
+      });
+      document.getElementById('ia-paste-input').value = '';
+      document.getElementById('ia-preview').style.display = 'none';
+      window._iaCodes = [];
+      showStatus(`✅ Venta confirmada — $${total}`);
+      renderShopAdmin();
+      mostrarRecibo(codesSnap.map(c => ({ code: c })), total, name, phone);
+    } catch(e) { showStatus('❌ Error: ' + e.message); }
+  });
+};
+
+window.copiarCoincidencias = function() {
+  const codes = window._iaCodes || [];
+  if (codes.length === 0) { showStatus('⚠️ No hay coincidencias aún'); return; }
+
+  // Group by team
+  const groups = {};
+  for (const code of codes) {
+    const team = code.split(' ')[0];
+    if (!groups[team]) groups[team] = [];
+    groups[team].push(code.split(' ')[1]);
+  }
+
+  const holos    = codes.filter(c => isHoloAdmin(c));
+  const normales = codes.filter(c => !isHoloAdmin(c));
+  const total    = normales.length * 5 + holos.length * 10;
+
+  const lines = ['🛒 NEXO — Tengo estas estampas disponibles para ti:', ''];
+  for (const [team, nums] of Object.entries(groups)) {
+    const teamDef  = ADMIN_TEAMS.find(t => t.code === team);
+    const flag     = teamDef?.flag || '';
+    const name     = teamDef?.name || team;
+    lines.push(`${flag} ${name}: ${nums.join(', ')}`);
+  }
+  lines.push('');
+  lines.push(`📦 Total: ${codes.length} estampa(s)`);
+  lines.push(`💰 Total: $${total}`);
+  lines.push('');
+  lines.push('¿Te las aparto? 🤙');
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text)
+    .then(() => showStatus('✅ Lista copiada — pégala en WhatsApp'))
+    .catch(() => {
+      // Fallback for mobile
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:88%;max-width:400px;height:60vh;background:#111;color:#eee;border:1px solid #333;border-radius:12px;padding:14px;font-family:DM Mono,monospace;font-size:12px;line-height:1.7;z-index:9999;resize:none;outline:none;';
+      ta.readOnly = true;
+      document.body.appendChild(ta);
+      ta.select();
+      setTimeout(() => ta.remove(), 20000);
+      showStatus('📋 Selecciona y copia el texto');
+    });
+};
+
+window.toggleSaleStatus = async function(saleId, newStatus) {
+  try {
+    await firestoreUpdateDoc(doc(db, 'shops', window._sellerUid, 'sales', saleId), { status: newStatus });
+    showStatus(newStatus === 'completada' ? '✅ Marcada como surtida' : '⏳ Marcada como pendiente');
+    loadSalesHistory();
+  } catch(e) { showStatus('❌ Error: ' + e.message); }
+};
+
+window.cancelarVenta = async function(saleId) {
+  // Primera confirmación
+  if (!confirm('¿Cancelar esta venta?\n\nEsto devolverá todas las estampas al inventario.')) return;
+
+  // Obtener datos de la venta
+  let saleData;
+  try {
+    const snap = await getDoc(doc(db, 'shops', window._sellerUid, 'sales', saleId));
+    if (!snap.exists()) { showStatus('❌ Venta no encontrada'); return; }
+    saleData = snap.data();
+  } catch(e) { showStatus('❌ Error: ' + e.message); return; }
+
+  const items    = saleData.items || [];
+  const total    = saleData.total || 0;
+  const client   = saleData.clientName ? ` de ${saleData.clientName}` : '';
+  const itemList = items.map(i => i.code).join(', ');
+
+  // Segunda confirmación con detalle
+  if (!confirm(`⚠️ SEGUNDA CONFIRMACIÓN\n\nSe devolverán al inventario:\n${itemList}\n\nTotal a revertir: $${total}${client}\n\n¿Estás seguro? Esta acción no se puede deshacer.`)) return;
+
+  // Devolver al stock
+  items.forEach(i => {
+    window._shopStock[i.code] = (window._shopStock[i.code] || 0) + 1;
+  });
+
+  try {
+    await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
+    await deleteDoc(doc(db, 'shops', window._sellerUid, 'sales', saleId));
+    showStatus(`↩️ Venta cancelada — ${items.length} estampa(s) devueltas al stock`);
+    loadSalesHistory();
+    renderShopAdmin();
+  } catch(e) { showStatus('❌ Error: ' + e.message); }
+};
+
+window.loadSalesHistory = async function() {
+  const panel = document.getElementById('sales-history-panel');
+  if (!panel) return;
+  panel.innerHTML = '<p style="color:#555;font-size:12px;text-align:center;padding:16px;">Cargando…</p>';
+  try {
+    const snap = await getDocs(collection(db, 'shops', window._sellerUid, 'sales'));
+    const sales = [];
+    snap.forEach(d => sales.push({ id: d.id, ...d.data() }));
+    sales.sort((a,b) => b.ts - a.ts);
+
+    const grandTotal = sales.reduce((s,v) => s + (v.total||0), 0);
+    const label = document.getElementById('sales-total-label');
+    if (label) label.textContent = `${sales.length} ventas · Total acumulado: $${grandTotal}`;
+
+    if (sales.length === 0) {
+      panel.innerHTML = '<p style="color:#555;font-size:12px;text-align:center;padding:16px;font-style:italic;">Sin ventas registradas aún.</p>';
+      return;
+    }
+
+    panel.innerHTML = sales.map(s => {
+      const date  = s.date || new Date(s.ts).toLocaleDateString('es-MX');
+      const time  = new Date(s.ts).toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
+      // Chips en línea ordenados por equipo y número
+      const orderedItems = groupCodesOrdered((s.items||[]).map(i=>i.code));
+      const flatCodes = orderedItems.flatMap(sec => sec.items.map(x => x.code));
+      const items = flatCodes.map(c => {
+        const holo = isHoloAdmin(c);
+        return `<span style="font-family:'DM Mono',monospace;font-size:10px;padding:2px 6px;
+          background:${holo?'rgba(212,168,32,0.1)':'rgba(255,255,255,0.05)'};
+          border-radius:3px;${holo?'border:1px solid rgba(212,168,32,0.3);color:#d4a820;':''}">${holo?'✨ ':''}${c}</span>`;
+      }).join(' ');
+      const srcLabel = s.source === 'lista' ? 'LISTA' : s.source === 'venta' ? 'VENTA' : 'IA';
+      const srcColor = s.source === 'lista' ? '#3080e8' : s.source === 'venta' ? '#a060f0' : '#555';
+      const isPending = s.status === 'pendiente';
+      const waLink = s.clientPhone ? `https://wa.me/${s.clientPhone.replace(/[^0-9]/g,'')}` : '';
+      return `<div style="padding:14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px;">
+        <div style="flex-shrink:0;text-align:center;min-width:70px;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);">$${s.total}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:#444;">${date}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:#444;">${time}</div>
+          <span style="font-family:DM Mono,monospace;font-size:9px;color:${srcColor};padding:1px 5px;border:1px solid ${srcColor}44;border-radius:3px;">${srcLabel}</span>
+        </div>
+        <div style="flex:1;min-width:0;">
+          ${s.clientName ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px;">👤 ${s.clientName}</div>` : ''}
+          ${s.clientPhone ? `<div style="margin-bottom:6px;"><a href="${waLink}" target="_blank" style="font-family:'DM Mono',monospace;font-size:11px;color:#25D366;text-decoration:none;">📱 ${s.clientPhone}</a></div>` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px;">${items}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;
+              padding:3px 10px;border-radius:12px;
+              background:${isPending?'rgba(255,96,48,0.15)':'rgba(48,192,96,0.12)'};
+              color:${isPending?'var(--orange)':'var(--green)'};
+              border:1px solid ${isPending?'rgba(255,96,48,0.4)':'rgba(48,192,96,0.35)'};">
+              ${isPending ? '⏳ PENDIENTE' : '✅ SURTIDA'}
+            </span>
+            <button onclick="toggleSaleStatus('${s.id}', '${isPending?'completada':'pendiente'}')"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;
+                padding:3px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;
+                color:#555;cursor:pointer;">
+              ${isPending ? '✓ Marcar surtida' : '↩ Marcar pendiente'}
+            </button>
+            <button onclick="cancelarVenta('${s.id}')"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;
+                padding:3px 10px;background:rgba(224,64,64,0.08);border:1px solid rgba(224,64,64,0.3);
+                border-radius:6px;color:var(--red);cursor:pointer;">
+              🗑 Cancelar
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    panel.innerHTML = `<p style="color:var(--red);font-size:12px;padding:12px;">Error: ${e.message}</p>`;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ORDEN AL AZAR
+// ═══════════════════════════════════════════════════════════════
+
+// Shared helper — group codes in defined team order, numbers sorted
+function groupCodesOrdered(codes) {
+  const ORDERED = [
+    { code:'FWC', flag:'🏆', name:'Introducción / FWC' },
+    { code:'CC',  flag:'🥤', name:'Coca-Cola' },
+    ...ADMIN_TEAMS.map(t => ({ code:t.code, flag:t.flag, name:t.name }))
+  ];
+  const raw = {};
+  codes.forEach(c => {
+    const parts = c.split(' ');
+    const team  = parts[0] === '00' ? 'FWC' : parts[0];
+    const num   = parseInt(parts[1]);
+    if (!raw[team]) raw[team] = [];
+    raw[team].push({ num, code: c });
+  });
+  for (const k of Object.keys(raw)) raw[k].sort((a,b) => a.num - b.num);
+  return ORDERED.filter(s => raw[s.code]).map(s => ({ ...s, items: raw[s.code] }));
+}
+
+window._randomType   = 'all';
+window._randomResult = [];
+
+window.setRandomType = function(type) {
+  window._randomType = type;
+  ['all','normal','holo'].forEach(t => {
+    const btn = document.getElementById(`rnd-btn-${t}`);
+    if (!btn) return;
+    const active = t === type;
+    btn.style.background    = active ? 'rgba(160,96,240,0.2)' : 'transparent';
+    btn.style.borderColor   = active ? 'rgba(160,96,240,0.5)'  : 'var(--border)';
+    btn.style.color         = active ? 'var(--gold)'           : '#555';
+  });
+};
+
+window.generarOrdenAlAzar = function() {
+  const qty   = parseInt(document.getElementById('random-qty')?.value) || 100;
+  const type  = window._randomType;
+  const stock = window._shopStock;
+
+  // Build pool of available codes based on type
+  const allTeamCodes = [
+    '00 1',
+    ...Array.from({length:19}, (_,i) => `FWC ${i+1}`),
+    ...Array.from({length:14}, (_,i) => `CC ${i+1}`),
+    ...ADMIN_TEAMS.flatMap(t => Array.from({length:20}, (_,i) => `${t.code} ${i+1}`))
+  ];
+
+  let pool = allTeamCodes.filter(code => {
+    const inStock = (stock[code] || 0) > 0;
+    if (!inStock) return false;
+    if (type === 'normal') return !isHoloAdmin(code);
+    if (type === 'holo')   return isHoloAdmin(code);
+    return true;
+  });
+
+  if (pool.length === 0) {
+    showStatus('⚠️ No hay estampas en stock para ese tipo');
+    return;
+  }
+
+  if (qty > pool.length) {
+    showStatus(`⚠️ Solo hay ${pool.length} estampas disponibles de ese tipo`);
+    // Continue with all available
+  }
+
+  // Fisher-Yates shuffle and take first qty
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const selected = pool.slice(0, Math.min(qty, pool.length));
+  window._randomResult = selected;
+
+  const total = selected.reduce((s,c) => s + (isHoloAdmin(c) ? 10 : 5), 0);
+  document.getElementById('rnd-count').textContent = selected.length;
+  document.getElementById('rnd-total').textContent = '$' + total;
+
+  const ordered = groupCodesOrdered(selected);
+  let html = '';
+  for (const sec of ordered) {
+    const holoItems = sec.items.filter(x => isHoloAdmin(x.code));
+    const normItems = sec.items.filter(x => !isHoloAdmin(x.code));
+    html += `<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">${sec.flag} ${sec.name} <span style="color:#444;font-size:11px;">${sec.items.length} estampas</span></div>
+      ${normItems.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;align-self:center;margin-right:2px;">$5</span>
+        ${normItems.map(x=>`<span style="font-family:'DM Mono',monospace;font-size:11px;padding:2px 6px;background:rgba(255,255,255,0.05);border-radius:3px;">${x.num}</span>`).join('')}
+      </div>` : ''}
+      ${holoItems.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;">
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:#a07010;align-self:center;margin-right:2px;">✨ $10</span>
+        ${holoItems.map(x=>`<span style="font-family:'DM Mono',monospace;font-size:11px;padding:2px 6px;background:rgba(212,168,32,0.1);border:1px solid rgba(212,168,32,0.3);border-radius:3px;color:#d4a820;">${x.num}</span>`).join('')}
+      </div>` : ''}
+    </div>`;
+  }
+
+  document.getElementById('rnd-chips').innerHTML = html;
+  document.getElementById('random-preview').style.display = 'block';
+};
+
+window.copiarOrdenAlAzar = function() {
+  const codes  = window._randomResult || [];
+  if (codes.length === 0) return;
+
+  // Build ordered list following ADMIN_TEAMS order (same as visual)
+  const ORDERED_SECTIONS = [
+    { code: 'FWC', flag: '🏆', name: 'Introducción / FWC' },
+    { code: 'CC',  flag: '🥤', name: 'Coca-Cola' },
+    ...ADMIN_TEAMS.map(t => ({ code: t.code, flag: t.flag, name: t.name }))
+  ];
+
+  const groups = {};
+  codes.forEach(c => {
+    const team = c.split(' ')[0] === '00' ? 'FWC' : c.split(' ')[0];
+    if (!groups[team]) groups[team] = [];
+    groups[team].push(parseInt(c.split(' ')[1]));
+  });
+
+  // Sort numbers within each team
+  for (const team of Object.keys(groups)) {
+    groups[team].sort((a,b) => a - b);
+  }
+
+  const total = codes.reduce((s,c) => s + (isHoloAdmin(c)?10:5), 0);
+  const lines = ['📦 NEXO — Estampas Panini Mundial 2026', ''];
+
+  // Iterate in defined order
+  for (const sec of ORDERED_SECTIONS) {
+    if (!groups[sec.code]) continue;
+    lines.push(`${sec.flag} ${sec.name}: ${groups[sec.code].join(', ')}`);
+  }
+
+  lines.push('');
+  lines.push(`📦 Total: ${codes.length} estampas`);
+  lines.push(`💰 Total: $${total}`);
+
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => showStatus('✅ Lista copiada'))
+    .catch(() => showStatus('📋 No se pudo copiar — usa el texto en pantalla'));
+};
+
+window.confirmarOrdenAlAzar = function() {
+  const codes = window._randomResult || [];
+  if (codes.length === 0) return;
+  const total  = codes.reduce((s,c) => s + (isHoloAdmin(c)?10:5), 0);
+  pedirDatosCliente(async ({ name, phone }) => {
+    // Descontar stock
+    codes.forEach(c => {
+      window._shopStock[c] = Math.max(0, (window._shopStock[c]||0) - 1);
+    });
+    try {
+      await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
+      await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
+        items: codes.map(c => ({ code: c, price: isHoloAdmin(c)?10:5 })),
+        total, ts: Date.now(),
+        date: new Date().toLocaleDateString('es-MX'),
+        source: 'azar',
+        clientName: name,
+        clientPhone: phone,
+        status: 'completada'
+      });
+      window._randomResult = [];
+      document.getElementById('random-preview').style.display = 'none';
+      document.getElementById('random-qty').value = '100';
+      showStatus(`✅ Orden confirmada — $${total}`);
+      renderShopAdmin();
+      mostrarRecibo(codes.map(c => ({ code: c })), total, name, phone);
+    } catch(e) { showStatus('❌ Error: ' + e.message); }
+  });
+};
+
+</script>
+
+<style>
+:root {
+  --bg: #080810;
+  --surface: #0f0f1a;
+  --surface2: #161622;
+  --border: #22223a;
+  --gold: #a060f0;
+  --gold2: #7030c0;
+  --red: #e04040;
+  --green: #30c060;
+  --blue: #3080e8;
+  --orange: #ff6030;
+  --text: #e8e8f4;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Barlow',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+/* LOGIN */
+#login-screen {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; gap:20px;
+}
+.login-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:16px;
+  padding:40px; text-align:center; max-width:340px; width:90%;
+}
+.login-card .logo { font-family:'Bebas Neue',sans-serif; font-size:32px; letter-spacing:8px; color:white; }
+.login-card .sub  { font-family:'DM Mono',monospace; font-size:11px; color:#444; margin:6px 0 28px; letter-spacing:2px; text-transform:uppercase; }
+.btn-google {
+  display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+  padding:12px; background:white; color:#333; border:none; border-radius:8px;
+  font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:600; letter-spacing:1px;
+  cursor:pointer; transition:all 0.2s;
+}
+.btn-google:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(0,0,0,0.4); }
+.google-logo { width:18px; height:18px; background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='%23EA4335' d='M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'/%3E%3Cpath fill='%234285F4' d='M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'/%3E%3Cpath fill='%23FBBC05' d='M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'/%3E%3Cpath fill='%2334A853' d='M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'/%3E%3C/svg%3E") center/contain no-repeat; }
+
+/* BLOCKED */
+#blocked-screen {
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; gap:12px; text-align:center;
+}
+#blocked-screen h2 { font-family:'Bebas Neue',sans-serif; font-size:28px; letter-spacing:4px; color:var(--red); }
+#blocked-screen p  { color:#555; font-size:13px; }
+
+/* STATUS BAR */
+#status-bar {
+  display:none; position:fixed; top:0; left:0; right:0; z-index:999;
+  background:rgba(160,96,240,0.15); border-bottom:1px solid rgba(160,96,240,0.3);
+  padding:8px 20px; font-family:'DM Mono',monospace; font-size:12px; color:var(--gold);
+  text-align:center;
+}
+
+/* DASHBOARD */
+#dashboard { display:none; }
+.admin-header {
+  background:linear-gradient(135deg,#060610 0%,#0d0a18 60%,#080610 100%);
+  border-bottom:1px solid var(--border); padding:14px 28px;
+  display:flex; align-items:center; gap:16px; position:sticky; top:0; z-index:100;
+}
+.admin-logo { font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:6px; color:white; }
+.admin-badge {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  padding:3px 10px; background:rgba(160,96,240,0.15); border:1px solid rgba(160,96,240,0.4);
+  border-radius:4px; color:var(--gold);
+}
+.admin-user { display:flex; align-items:center; gap:8px; margin-left:auto; }
+#admin-photo { width:28px; height:28px; border-radius:50%; border:2px solid var(--gold2); object-fit:cover; display:none; }
+#admin-name  { font-family:'DM Mono',monospace; font-size:11px; color:#666; }
+.btn-refresh, .btn-logout {
+  font-family:'Barlow Condensed',sans-serif; font-size:11px; font-weight:600; letter-spacing:2px;
+  text-transform:uppercase; padding:6px 12px; border-radius:4px; cursor:pointer; transition:all 0.2s; border:none;
+}
+.btn-refresh { background:transparent; color:var(--gold); border:1px solid rgba(160,96,240,0.3); }
+.btn-refresh:hover { background:rgba(160,96,240,0.1); }
+.btn-logout  { background:transparent; color:#555; border:1px solid var(--border); }
+.btn-logout:hover  { color:var(--red); border-color:rgba(224,64,64,0.4); }
+#last-updated { font-family:'DM Mono',monospace; font-size:10px; color:#333; margin-left:4px; }
+
+.content { max-width:1400px; margin:0 auto; padding:24px 28px 60px; }
+
+/* SECTION HEADER */
+.section-hdr {
+  font-family:'Bebas Neue',sans-serif; font-size:16px; letter-spacing:4px; color:var(--gold);
+  margin:32px 0 14px; padding-bottom:8px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:10px;
+}
+.section-hdr span { font-family:'DM Mono',monospace; color:#333; font-size:10px; letter-spacing:2px; }
+
+/* STAT CARDS */
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+.stat-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:18px 20px; position:relative; overflow:hidden;
+}
+.stat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--color1,var(--gold2)),var(--color2,var(--gold)));
+}
+.stat-card .sc-val  { font-family:'Bebas Neue',sans-serif; font-size:36px; line-height:1; color:var(--sc-color,var(--gold)); }
+.stat-card .sc-label{ font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#444; margin-top:6px; }
+.stat-card .sc-icon  { position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:28px; opacity:0.15; }
+
+/* TWO-COL GRID */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:800px){ .two-col { grid-template-columns:1fr; } }
+
+/* PANEL */
+.panel {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px;
+}
+.panel-title {
+  font-family:'Barlow Condensed',sans-serif; font-size:11px; font-weight:700;
+  letter-spacing:3px; text-transform:uppercase; color:#555; margin-bottom:14px;
+}
+
+/* RANK ROWS */
+.rank-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.rank-code { font-family:'DM Mono',monospace; font-size:11px; color:#888; min-width:60px; }
+.rank-bar-wrap { flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+.rank-bar { height:100%; border-radius:3px; transition:width 0.6s; }
+.rank-bar.missed { background:linear-gradient(90deg,var(--red),#ff6060); }
+.rank-bar.duped  { background:linear-gradient(90deg,var(--orange),#ffb060); }
+.rank-bar.team   { }
+.rank-val { font-family:'DM Mono',monospace; font-size:11px; color:#555; min-width:40px; text-align:right; }
+
+/* TEAM ROWS */
+.team-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.team-flag { font-size:16px; min-width:22px; }
+.team-name { font-family:'Barlow Condensed',sans-serif; font-size:12px; color:#888; min-width:110px; }
+.team-complete { font-family:'DM Mono',monospace; font-size:10px; color:var(--green); min-width:80px; text-align:right; }
+
+/* FUNNEL */
+.funnel { display:flex; flex-direction:column; gap:10px; }
+.funnel-row { display:flex; align-items:center; gap:12px; }
+.funnel-label { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:1px; text-transform:uppercase; min-width:80px; }
+.funnel-bar-wrap { flex:1; height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+.funnel-bar { height:100%; border-radius:4px; transition:width 0.6s; }
+.funnel-val { font-family:'Bebas Neue',sans-serif; font-size:18px; min-width:30px; text-align:right; }
+#fbar-pending  { background:rgba(160,96,240,0.6); }
+#fbar-accepted { background:rgba(48,128,232,0.7); }
+#fbar-completed{ background:var(--green); }
+#fbar-declined { background:rgba(224,64,64,0.5); }
+.funnel-label.pending  { color:var(--gold); }
+.funnel-label.accepted { color:var(--blue); }
+.funnel-label.completed{ color:var(--green); }
+.funnel-label.declined { color:var(--red); }
+.funnel-val.pending  { color:var(--gold); }
+.funnel-val.accepted { color:var(--blue); }
+.funnel-val.completed{ color:var(--green); }
+.funnel-val.declined { color:var(--red); }
+
+/* USERS TABLE */
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+thead th {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+  color:#444; padding:10px 14px; text-align:left; border-bottom:1px solid var(--border);
+}
+tbody tr { border-bottom:1px solid rgba(255,255,255,0.03); transition:background 0.15s; }
+tbody tr:hover { background:var(--surface2); }
+tbody td { padding:10px 14px; font-size:13px; }
+
+.mode-pill {
+  font-family:'Barlow Condensed',sans-serif; font-size:11px; font-weight:600; letter-spacing:1px;
+  padding:3px 8px; border-radius:10px; white-space:nowrap;
+}
+.mode-pill.both { background:rgba(160,96,240,0.15); color:var(--gold); border:1px solid rgba(160,96,240,0.3); }
+.mode-pill.swap { background:rgba(48,192,96,0.1);  color:var(--green); border:1px solid rgba(48,192,96,0.25); }
+
+.user-main-row:hover { background:var(--surface2) !important; }
+
+/* SHOP ADMIN */
+.inv-section-hdr {
+  font-family:'Barlow Condensed',sans-serif; font-size:11px; font-weight:700;
+  letter-spacing:3px; text-transform:uppercase; color:var(--gold);
+  margin:18px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:8px;
+}
+.inv-grid { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.inv-chip {
+  display:flex; align-items:center; gap:6px;
+  background:var(--surface2); border:1px solid var(--border); border-radius:7px;
+  padding:5px 8px; transition:border-color 0.15s;
+}
+.inv-chip.has-stock { border-color:rgba(48,192,96,0.35); }
+.inv-chip-code { font-family:'Barlow Condensed',sans-serif; font-size:12px; font-weight:700; color:var(--text); min-width:44px; }
+.inv-input {
+  font-family:'Bebas Neue',sans-serif; font-size:16px; color:var(--gold);
+  width:36px; text-align:center; background:transparent; border:none; outline:none;
+  -moz-appearance:textfield; padding:0;
+}
+.inv-input::-webkit-outer-spin-button,
+.inv-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.inv-input:focus { background:rgba(255,255,255,0.06); border-radius:4px; color:white; }
+.inv-chip.has-stock .inv-input { color:var(--green); }
+.inv-btn {
+  width:20px; height:20px; border-radius:4px; border:none; cursor:pointer;
+  font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,0.06); color:#888; transition:all 0.15s;
+}
+.inv-btn:hover { background:rgba(255,255,255,0.14); color:var(--text); }
+.inv-btn.minus:hover { background:rgba(224,64,64,0.2); color:var(--red); }
+.inv-btn.plus:hover  { background:rgba(48,192,96,0.2);  color:var(--green); }
+.user-detail-row td { background:var(--surface2); }
+.user-album-panel { max-height:600px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<div id="status-bar"></div>
+
+<!-- ── LOGIN ──────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="logo">NEXO</div>
+    <div class="sub">// admin panel</div>
+    <button class="btn-google" onclick="loginGoogle()">
+      <div class="google-logo"></div>
+      Entrar con Google
+    </button>
+  </div>
+  <p style="font-family:'DM Mono',monospace;font-size:11px;color:#333;">Acceso restringido al administrador</p>
+</div>
+
+<!-- ── BLOQUEADO ───────────────────────────────────────────── -->
+<div id="blocked-screen">
+  <h2>Acceso Denegado</h2>
+  <p>Tu cuenta no tiene acceso a Nexo Seller.</p>
+  <p style="color:#333;font-size:12px;margin-top:8px;">¿Quieres acceso? Escríbenos por <a href="https://wa.me/524621497740" style="color:var(--gold);">WhatsApp</a></p>
+  <p style="color:#333;font-size:11px;margin-top:6px;">Redirigiendo…</p>
+</div>
+
+<!-- ── DASHBOARD ───────────────────────────────────────────── -->
+<div id="dashboard">
+  <div class="admin-header">
+    <div class="admin-logo">NEXO</div>
+    <div class="admin-badge">ADMIN</div>
+    <div class="admin-user">
+      <img id="admin-photo" src="" alt="">
+      <span id="admin-name"></span>
+      <span id="last-updated"></span>
+      <button class="btn-refresh" onclick="refresh()">↻ Actualizar</button>
+      <button class="btn-logout"  onclick="logoutAdmin()">Salir</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- USUARIOS -->
+    <div class="section-hdr">Usuarios <span>OVERVIEW</span></div>
+    <div class="stats-grid">
+      <div class="stat-card" style="--sc-color:var(--gold)">
+        <div class="sc-icon">👥</div>
+        <div class="sc-val" id="stat-users">—</div>
+        <div class="sc-label">Registrados</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--green)">
+        <div class="sc-icon">⚡</div>
+        <div class="sc-val" id="stat-active">—</div>
+        <div class="sc-label">Activos 7 días</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--blue)">
+        <div class="sc-icon">👤</div>
+        <div class="sc-val" id="stat-profiles">—</div>
+        <div class="sc-label">Con perfil</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--orange)">
+        <div class="sc-icon">📊</div>
+        <div class="sc-val" id="stat-avg">—</div>
+        <div class="sc-label">Progreso prom.</div>
+      </div>
+    </div>
+
+    <!-- INTERCAMBIOS -->
+    <div class="section-hdr">Mensajería y Propuestas <span>TRADE FUNNEL</span></div>
+    <div class="stats-grid" style="margin-bottom:16px;">
+      <div class="stat-card" style="--sc-color:#a060f0">
+        <div class="sc-icon">💬</div>
+        <div class="sc-val" id="stat-chats">—</div>
+        <div class="sc-label">Chats abiertos</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--blue)">
+        <div class="sc-icon">✉️</div>
+        <div class="sc-val" id="stat-messages">—</div>
+        <div class="sc-label">Mensajes enviados</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--orange)">
+        <div class="sc-icon">📋</div>
+        <div class="sc-val" id="stat-proposals">—</div>
+        <div class="sc-label">Propuestas totales</div>
+      </div>
+      <div class="stat-card" style="--sc-color:var(--green)">
+        <div class="sc-icon">🤝</div>
+        <div class="sc-val" id="stat-completed">—</div>
+        <div class="sc-label">Completados</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-title">Estado de propuestas</div>
+      <div class="funnel">
+        <div class="funnel-row">
+          <span class="funnel-label pending">Pendientes</span>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-pending" style="width:0%"></div></div>
+          <span class="funnel-val pending" id="funnel-pending">—</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label accepted">Aceptadas</span>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-accepted" style="width:0%"></div></div>
+          <span class="funnel-val accepted" id="funnel-accepted">—</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label completed">Completadas</span>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-completed" style="width:0%"></div></div>
+          <span class="funnel-val completed" id="funnel-completed">—</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label declined">Rechazadas</span>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-declined" style="width:0%"></div></div>
+          <span class="funnel-val declined" id="funnel-declined">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STICKER INSIGHTS -->
+    <div class="section-hdr">Estampas <span>INSIGHTS</span></div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">🔴 Más difíciles de conseguir</div>
+        <div id="most-missed"><p style="color:#333;font-size:12px;">Cargando…</p></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🟠 Más repetidas en el grupo</div>
+        <div id="most-duped"><p style="color:#333;font-size:12px;">Cargando…</p></div>
+      </div>
+    </div>
+
+    <!-- EQUIPOS -->
+    <div class="section-hdr">Equipos <span>% POSESIÓN PROMEDIO</span></div>
+    <div class="panel">
+      <div class="panel-title">Porcentaje de posesión entre todos los usuarios</div>
+      <div id="team-completion" style="column-count:2;column-gap:24px;">
+        <p style="color:#333;font-size:12px;">Cargando…</p>
+      </div>
+    </div>
+
+    <!-- TABLA DE USUARIOS -->
+    <div class="section-hdr">Usuarios <span>DETALLE</span></div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Usuario</th>
+              <th>Modo</th>
+              <th>Progreso</th>
+              <th>Conseguidas</th>
+              <th>Repetidas</th>
+              <th>Activo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <tr><td colspan="7" style="text-align:center;color:#333;padding:30px;">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- INVENTARIO TIENDA -->
+    <div class="section-hdr" style="margin-top:40px;">🛒 Inventario Tienda <span>ADMIN</span></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+      <button onclick="loadAndRenderShopAdmin()" class="btn-refresh">↻ Recargar</button>
+      <button onclick="exportShopText()" class="btn-refresh" style="color:var(--green);border-color:rgba(48,192,96,0.4);">📋 Exportar stock</button>
+      <button onclick="openQuickLoad('add')" class="btn-refresh" style="color:#f0a020;border-color:rgba(240,160,32,0.4);">⚡ Carga Rápida</button>
+      <button onclick="openQuickLoad('sell')" class="btn-refresh" style="color:var(--red);border-color:rgba(224,64,64,0.4);">💸 Venta Rápida</button>
+      <button onclick="openQuickLoad('venta')" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">🛍 Venta Nueva</button>
+      <button onclick="openScanner()" class="btn-refresh" style="color:#60d0ff;border-color:rgba(96,208,255,0.4);">📷 Escanear</button>
+      <button onclick="openSpecialsAdmin()" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">⭐ Especiales</button>
+      <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
+    </div>
+    <div class="panel" id="shop-admin-panel">
+      <p style="color:#555;font-size:13px;text-align:center;padding:20px;">Cargando inventario…</p>
+    </div>
+
+    <!-- SURTIR LISTA -->
+    <div class="section-hdr" style="margin-top:40px;">📋 Surtir Lista <span>COMPARAR CON INVENTARIO</span></div>
+    <div class="panel">
+      <div class="panel-title">Pega la lista de faltantes del cliente — el sistema la compara automáticamente con tu stock</div>
+      <p style="font-family:'DM Mono',monospace;font-size:11px;color:#555;margin-bottom:12px;line-height:1.7;">
+        Acepta el formato de la app: <span style="color:#888;">MEX 🇲🇽: 3, 7, 12</span> o simple <span style="color:#888;">MEX 3, MEX 7</span>
+      </p>
+      <textarea id="ia-paste-input" placeholder="Pega aquí la lista del cliente..."
+        style="width:100%;height:160px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+          padding:12px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;
+          resize:vertical;outline:none;line-height:1.7;"
+        oninput="previewIAPaste()"></textarea>
+
+      <div id="ia-preview" style="margin-top:14px;display:none;">
+        <!-- Stats bar -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;align-items:center;">
+          <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="ia-match-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">COINCIDENCIAS</span></div>
+          <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--red);" id="ia-nomatch-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">SIN STOCK</span></div>
+          <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="ia-total">$0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">TOTAL</span></div>
+          <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0;">
+            <button onclick="copiarCoincidencias()"
+              style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:11px 16px;
+                background:rgba(160,96,240,0.15);color:var(--gold);border:1px solid rgba(160,96,240,0.4);
+                border-radius:8px;cursor:pointer;white-space:nowrap;">
+              📋 Copiar
+            </button>
+            <button onclick="generarVentaIA()"
+              style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:11px 20px;
+                background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
+              ✓ VENDER
+            </button>
+          </div>
+        </div>
+
+        <!-- Matches grouped by team -->
+        <div id="ia-chips" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- HISTORIAL DE VENTAS -->
+    <!-- ORDEN AL AZAR -->
+    <div class="section-hdr" style="margin-top:40px;">🎲 Orden al Azar <span>SURTIR SIN REPETIR</span></div>
+    <div class="panel">
+      <div class="panel-title">Genera una selección aleatoria de tu inventario sin repetir</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+        <div>
+          <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:6px;">CANTIDAD</label>
+          <input id="random-qty" type="number" value="100" min="1" max="994"
+            style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;
+              padding:9px 12px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:22px;
+              outline:none;text-align:center;">
+        </div>
+        <div>
+          <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:6px;">TIPO</label>
+          <div style="display:flex;gap:6px;">
+            <button id="rnd-btn-all" onclick="setRandomType('all')"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
+                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid rgba(160,96,240,0.5);
+                background:rgba(160,96,240,0.2);color:var(--gold);transition:all 0.15s;">
+              Todas
+            </button>
+            <button id="rnd-btn-normal" onclick="setRandomType('normal')"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
+                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);
+                background:transparent;color:#555;transition:all 0.15s;">
+              Solo normales
+            </button>
+            <button id="rnd-btn-holo" onclick="setRandomType('holo')"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
+                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);
+                background:transparent;color:#555;transition:all 0.15s;">
+              ✨ Solo holos
+            </button>
+          </div>
+        </div>
+        <button onclick="generarOrdenAlAzar()"
+          style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;padding:11px 24px;
+            background:linear-gradient(135deg,var(--nexo2,#7030c0),var(--gold));color:white;
+            border:none;border-radius:8px;cursor:pointer;white-space:nowrap;">
+          🎲 Generar
+        </button>
+      </div>
+
+      <div id="random-preview" style="display:none;">
+        <!-- Stats -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;align-items:center;">
+          <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--gold);" id="rnd-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">ESTAMPAS</span></div>
+          <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="rnd-total">$0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">TOTAL</span></div>
+          <div style="margin-left:auto;display:flex;gap:8px;">
+            <button onclick="copiarOrdenAlAzar()"
+              style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;
+                padding:10px 16px;background:rgba(160,96,240,0.15);color:var(--gold);
+                border:1px solid rgba(160,96,240,0.4);border-radius:8px;cursor:pointer;">
+              📋 Copiar lista
+            </button>
+            <button onclick="confirmarOrdenAlAzar()"
+              style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:10px 20px;
+                background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
+              ✓ Confirmar y vender
+            </button>
+          </div>
+        </div>
+        <!-- Grouped result -->
+        <div id="rnd-chips" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
+
+    <div class="section-hdr" style="margin-top:40px;">📋 Historial de Ventas <span>FIREBASE</span></div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+      <button onclick="loadSalesHistory()" class="btn-refresh">↻ Cargar historial</button>
+      <span id="sales-total-label" style="font-family:'DM Mono',monospace;font-size:11px;color:#555;"></span>
+    </div>
+    <div class="panel" id="sales-history-panel">
+      <p style="color:#555;font-size:12px;text-align:center;padding:16px;">Pulsa "Cargar historial" para ver las ventas.</p>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
