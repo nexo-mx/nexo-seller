@@ -66,6 +66,7 @@ onAuthStateChanged(auth, async user => {
   }
   window._sellerUid = user.uid;
   showDashboard();
+  await loadPrices();
   await loadData();
 });
 
@@ -903,7 +904,7 @@ window.updateVentaBar = function() {
       background:rgba(212,168,32,0.15);border:1px solid rgba(212,168,32,0.4);border-radius:4px;color:#d4a820;">
       ${x.code} $${price}</span>`;
   }).join('');
-  const sum = _saleItems.reduce((s,x) => s + (isHoloAdmin(x.code) ? 10 : 5), 0);
+  const sum = _saleItems.reduce((s,x) => s + (window.getPrice(x.code)), 0);
   if (total) total.textContent = '$' + sum;
 };
 
@@ -984,7 +985,7 @@ window.finalizarVenta = async function() {
     try {
       await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
       await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
-        items: itemsSnap.map(x => ({ code: x.code, price: isHoloAdmin(x.code) ? 10 : 5 })),
+        items: itemsSnap.map(x => ({ code: x.code, price: window.getPrice(x.code) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
         source: 'venta',
@@ -1766,7 +1767,7 @@ window.previewIAPaste = function() {
 
   const matches   = allCodes.filter(c => (window._shopStock[c]||0) > 0);
   const noMatches = allCodes.filter(c => (window._shopStock[c]||0) === 0);
-  const total     = matches.reduce((s,c) => s + (isHoloAdmin(c) ? 10 : 5), 0);
+  const total     = matches.reduce((s,c) => s + (window.getPrice(c)), 0);
 
   if (matchEl)   matchEl.textContent   = matches.length;
   if (noMatchEl) noMatchEl.textContent = noMatches.length;
@@ -1833,7 +1834,7 @@ window.generarVentaIA = async function() {
     try {
       await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
       await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
-        items: codesSnap.map(c => ({ code: c, price: isHoloAdmin(c) ? 10 : 5 })),
+        items: codesSnap.map(c => ({ code: c, price: window.getPrice(c) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
         source: 'lista',
@@ -2090,7 +2091,7 @@ window.generarOrdenAlAzar = function() {
   const selected = pool.slice(0, Math.min(qty, pool.length));
   window._randomResult = selected;
 
-  const total = selected.reduce((s,c) => s + (isHoloAdmin(c) ? 10 : 5), 0);
+  const total = selected.reduce((s,c) => s + (window.getPrice(c)), 0);
   document.getElementById('rnd-count').textContent = selected.length;
   document.getElementById('rnd-total').textContent = '$' + total;
 
@@ -2139,7 +2140,7 @@ window.copiarOrdenAlAzar = function() {
     groups[team].sort((a,b) => a - b);
   }
 
-  const total = codes.reduce((s,c) => s + (isHoloAdmin(c)?10:5), 0);
+  const total = codes.reduce((s,c) => s + (window.getPrice(c)), 0);
   const lines = ['📦 NEXO — Estampas Panini Mundial 2026', ''];
 
   // Iterate in defined order
@@ -2160,7 +2161,7 @@ window.copiarOrdenAlAzar = function() {
 window.confirmarOrdenAlAzar = function() {
   const codes = window._randomResult || [];
   if (codes.length === 0) return;
-  const total  = codes.reduce((s,c) => s + (isHoloAdmin(c)?10:5), 0);
+  const total  = codes.reduce((s,c) => s + (window.getPrice(c)), 0);
   pedirDatosCliente(async ({ name, phone }) => {
     // Descontar stock
     codes.forEach(c => {
@@ -2169,7 +2170,7 @@ window.confirmarOrdenAlAzar = function() {
     try {
       await setDoc(doc(db, 'shops', window._sellerUid, 'inventory'), { stock: window._shopStock }, { merge: false });
       await addDoc(collection(db, 'shops', window._sellerUid, 'sales'), {
-        items: codes.map(c => ({ code: c, price: isHoloAdmin(c)?10:5 })),
+        items: codes.map(c => ({ code: c, price: window.getPrice(c) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
         source: 'azar',
@@ -2185,6 +2186,150 @@ window.confirmarOrdenAlAzar = function() {
       mostrarRecibo(codes.map(c => ({ code: c })), total, name, phone);
     } catch(e) { showStatus('❌ Error: ' + e.message); }
   });
+};
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE PRECIOS
+// ═══════════════════════════════════════════════════════════════
+// Prices stored in Firestore: shops/{uid}/config/prices
+// { normal: 5, holo: 10, custom: { "MEX 1": 15, "ARG 14": 50 } }
+
+window._prices = { normal: 5, holo: 10, custom: {} };
+
+async function loadPrices() {
+  try {
+    const snap = await getDoc(doc(db, 'shops', window._sellerUid, 'config', 'prices'));
+    if (snap.exists()) window._prices = { normal:5, holo:10, custom:{}, ...snap.data() };
+  } catch(e) { console.error('prices load', e); }
+}
+
+async function savePrices() {
+  try {
+    await setDoc(doc(db, 'shops', window._sellerUid, 'config', 'prices'), window._prices);
+    showStatus('✅ Precios guardados');
+  } catch(e) { showStatus('❌ Error: ' + e.message); }
+}
+
+// Use price in all sale calculations
+window.getPrice = function(code) {
+  if (window._prices.custom?.[code] !== undefined) return window._prices.custom[code];
+  return isHoloAdmin(code) ? (window._prices.holo || 10) : (window._prices.normal || 5);
+};
+
+window.openPreciosConfig = async function() {
+  await loadPrices();
+  const existing = document.getElementById('precios-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'precios-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(6px);';
+
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:480px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.7);">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:3px;color:#a060f0;">💲 CONFIGURAR PRECIOS</span>
+        <button onclick="document.getElementById('precios-overlay').remove()" style="background:none;border:none;color:#555;font-size:22px;cursor:pointer;">✕</button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:20px;-webkit-overflow-scrolling:touch;">
+
+        <!-- Base prices -->
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:#555;margin-bottom:14px;">PRECIOS BASE</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;">
+            <div style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;margin-bottom:8px;">🃏 NORMAL</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:#888;">$</span>
+              <input id="price-normal" type="number" min="0" value="${window._prices.normal}"
+                style="flex:1;background:transparent;border:none;outline:none;font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--green);width:100%;">
+            </div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid rgba(212,168,32,0.3);border-radius:10px;padding:14px;">
+            <div style="font-family:'DM Mono',monospace;font-size:10px;color:#a07010;letter-spacing:2px;margin-bottom:8px;">✨ HOLOGRAMA</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:#888;">$</span>
+              <input id="price-holo" type="number" min="0" value="${window._prices.holo}"
+                style="flex:1;background:transparent;border:none;outline:none;font-family:'Bebas Neue',sans-serif;font-size:32px;color:#d4a820;width:100%;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom prices -->
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:#555;margin-bottom:10px;">PRECIOS ESPECIALES POR ESTAMPA</div>
+        <p style="font-family:'DM Mono',monospace;font-size:11px;color:#444;margin-bottom:14px;line-height:1.6;">Para Messi, CR7 u otras estampas premium. Estos precios tienen prioridad sobre los base.</p>
+
+        <div id="custom-prices-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+          ${Object.entries(window._prices.custom||{}).map(([code, price]) => `
+            <div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+              <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text);flex:1;">${code}</span>
+              <span style="font-family:'Bebas Neue',sans-serif;font-size:10px;color:#555;">$</span>
+              <input type="number" min="0" value="${price}" data-custom-code="${code}"
+                style="width:60px;background:transparent;border:none;border-bottom:1px solid var(--border);outline:none;font-family:'Bebas Neue',sans-serif;font-size:20px;color:#a060f0;text-align:right;"
+                onchange="updateCustomPrice('${code}', this.value)">
+              <button onclick="removeCustomPrice('${code}')" style="background:none;border:none;color:#555;cursor:pointer;font-size:16px;">✕</button>
+            </div>`).join('') || '<p style="color:#444;font-size:12px;font-style:italic;">No hay precios especiales aún.</p>'}
+        </div>
+
+        <!-- Add custom price -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;">
+          <input id="new-custom-code" type="text" placeholder="Ej: ARG 14"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;text-transform:uppercase;"
+            onkeydown="if(event.key==='Enter')addCustomPrice()">
+          <span style="font-family:'Bebas Neue',sans-serif;color:#555;font-size:16px;">$</span>
+          <input id="new-custom-price" type="number" min="0" placeholder="00"
+            style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 8px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:20px;outline:none;text-align:center;"
+            onkeydown="if(event.key==='Enter')addCustomPrice()">
+          <button onclick="addCustomPrice()"
+            style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:9px 16px;
+              background:rgba(160,96,240,0.15);color:#a060f0;border:1px solid rgba(160,96,240,0.4);
+              border-radius:7px;cursor:pointer;">+ Agregar</button>
+        </div>
+
+        <!-- Save -->
+        <button onclick="savePreciosConfig()"
+          style="width:100%;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;padding:13px;
+            background:linear-gradient(135deg,#6030b0,#a060f0);color:white;border:none;border-radius:8px;cursor:pointer;">
+          💾 Guardar Precios
+        </button>
+      </div>
+    </div>`;
+
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+window.addCustomPrice = function() {
+  const code  = document.getElementById('new-custom-code')?.value.trim().toUpperCase();
+  const price = parseInt(document.getElementById('new-custom-price')?.value);
+  if (!code || isNaN(price)) { showStatus('⚠️ Escribe el código y el precio'); return; }
+  window._prices.custom = window._prices.custom || {};
+  window._prices.custom[code] = price;
+  // Refresh modal
+  openPreciosConfig();
+};
+
+window.removeCustomPrice = function(code) {
+  delete window._prices.custom[code];
+  openPreciosConfig();
+};
+
+window.updateCustomPrice = function(code, val) {
+  window._prices.custom[code] = parseInt(val) || 0;
+};
+
+window.savePreciosConfig = async function() {
+  const normal = parseInt(document.getElementById('price-normal')?.value) || 5;
+  const holo   = parseInt(document.getElementById('price-holo')?.value)   || 10;
+  window._prices.normal = normal;
+  window._prices.holo   = holo;
+  // Collect all custom price inputs
+  document.querySelectorAll('[data-custom-code]').forEach(input => {
+    const code = input.dataset.customCode;
+    window._prices.custom[code] = parseInt(input.value) || 0;
+  });
+  await savePrices();
+  document.getElementById('precios-overlay')?.remove();
 };
 
 </script>
@@ -2442,128 +2587,6 @@ tbody td { padding:10px 14px; font-size:13px; }
 
   <div class="content">
 
-    <!-- USUARIOS -->
-    <div class="section-hdr">Usuarios <span>OVERVIEW</span></div>
-    <div class="stats-grid">
-      <div class="stat-card" style="--sc-color:var(--gold)">
-        <div class="sc-icon">👥</div>
-        <div class="sc-val" id="stat-users">—</div>
-        <div class="sc-label">Registrados</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--green)">
-        <div class="sc-icon">⚡</div>
-        <div class="sc-val" id="stat-active">—</div>
-        <div class="sc-label">Activos 7 días</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--blue)">
-        <div class="sc-icon">👤</div>
-        <div class="sc-val" id="stat-profiles">—</div>
-        <div class="sc-label">Con perfil</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--orange)">
-        <div class="sc-icon">📊</div>
-        <div class="sc-val" id="stat-avg">—</div>
-        <div class="sc-label">Progreso prom.</div>
-      </div>
-    </div>
-
-    <!-- INTERCAMBIOS -->
-    <div class="section-hdr">Mensajería y Propuestas <span>TRADE FUNNEL</span></div>
-    <div class="stats-grid" style="margin-bottom:16px;">
-      <div class="stat-card" style="--sc-color:#a060f0">
-        <div class="sc-icon">💬</div>
-        <div class="sc-val" id="stat-chats">—</div>
-        <div class="sc-label">Chats abiertos</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--blue)">
-        <div class="sc-icon">✉️</div>
-        <div class="sc-val" id="stat-messages">—</div>
-        <div class="sc-label">Mensajes enviados</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--orange)">
-        <div class="sc-icon">📋</div>
-        <div class="sc-val" id="stat-proposals">—</div>
-        <div class="sc-label">Propuestas totales</div>
-      </div>
-      <div class="stat-card" style="--sc-color:var(--green)">
-        <div class="sc-icon">🤝</div>
-        <div class="sc-val" id="stat-completed">—</div>
-        <div class="sc-label">Completados</div>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-bottom:16px;">
-      <div class="panel-title">Estado de propuestas</div>
-      <div class="funnel">
-        <div class="funnel-row">
-          <span class="funnel-label pending">Pendientes</span>
-          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-pending" style="width:0%"></div></div>
-          <span class="funnel-val pending" id="funnel-pending">—</span>
-        </div>
-        <div class="funnel-row">
-          <span class="funnel-label accepted">Aceptadas</span>
-          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-accepted" style="width:0%"></div></div>
-          <span class="funnel-val accepted" id="funnel-accepted">—</span>
-        </div>
-        <div class="funnel-row">
-          <span class="funnel-label completed">Completadas</span>
-          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-completed" style="width:0%"></div></div>
-          <span class="funnel-val completed" id="funnel-completed">—</span>
-        </div>
-        <div class="funnel-row">
-          <span class="funnel-label declined">Rechazadas</span>
-          <div class="funnel-bar-wrap"><div class="funnel-bar" id="fbar-declined" style="width:0%"></div></div>
-          <span class="funnel-val declined" id="funnel-declined">—</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- STICKER INSIGHTS -->
-    <div class="section-hdr">Estampas <span>INSIGHTS</span></div>
-    <div class="two-col">
-      <div class="panel">
-        <div class="panel-title">🔴 Más difíciles de conseguir</div>
-        <div id="most-missed"><p style="color:#333;font-size:12px;">Cargando…</p></div>
-      </div>
-      <div class="panel">
-        <div class="panel-title">🟠 Más repetidas en el grupo</div>
-        <div id="most-duped"><p style="color:#333;font-size:12px;">Cargando…</p></div>
-      </div>
-    </div>
-
-    <!-- EQUIPOS -->
-    <div class="section-hdr">Equipos <span>% POSESIÓN PROMEDIO</span></div>
-    <div class="panel">
-      <div class="panel-title">Porcentaje de posesión entre todos los usuarios</div>
-      <div id="team-completion" style="column-count:2;column-gap:24px;">
-        <p style="color:#333;font-size:12px;">Cargando…</p>
-      </div>
-    </div>
-
-    <!-- TABLA DE USUARIOS -->
-    <div class="section-hdr">Usuarios <span>DETALLE</span></div>
-    <div class="panel">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Usuario</th>
-              <th>Modo</th>
-              <th>Progreso</th>
-              <th>Conseguidas</th>
-              <th>Repetidas</th>
-              <th>Activo</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="users-table-body">
-            <tr><td colspan="7" style="text-align:center;color:#333;padding:30px;">Cargando…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- INVENTARIO TIENDA -->
     <div class="section-hdr" style="margin-top:40px;">🛒 Inventario Tienda <span>ADMIN</span></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
@@ -2572,8 +2595,8 @@ tbody td { padding:10px 14px; font-size:13px; }
       <button onclick="openQuickLoad('add')" class="btn-refresh" style="color:#f0a020;border-color:rgba(240,160,32,0.4);">⚡ Carga Rápida</button>
       <button onclick="openQuickLoad('sell')" class="btn-refresh" style="color:var(--red);border-color:rgba(224,64,64,0.4);">💸 Venta Rápida</button>
       <button onclick="openQuickLoad('venta')" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">🛍 Venta Nueva</button>
-      <button onclick="openScanner()" class="btn-refresh" style="color:#60d0ff;border-color:rgba(96,208,255,0.4);">📷 Escanear</button>
-      <button onclick="openSpecialsAdmin()" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">⭐ Especiales</button>
+
+      <button onclick="openPreciosConfig()" class="btn-refresh" style="color:#a060f0;border-color:rgba(160,96,240,0.4);">💲 Precios</button>
       <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
     </div>
     <div class="panel" id="shop-admin-panel">
