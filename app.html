@@ -2338,6 +2338,14 @@ window.toggleInventario = function() {
   }
 };
 
+window.sellerTab = function(tab, btn) {
+  document.querySelectorAll('.seller-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('seller-tab-main').style.display      = tab === 'main'      ? 'block' : 'none';
+  document.getElementById('seller-tab-historial').style.display = tab === 'historial' ? 'block' : 'none';
+  if (tab === 'historial') loadSalesHistory();
+};
+
 </script>
 
 <style>
@@ -2547,6 +2555,14 @@ tbody td { padding:10px 14px; font-size:13px; }
 .user-detail-row td { background:var(--surface2); }
 .user-album-panel { max-height:600px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 
+.seller-tab {
+  font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;padding:12px 20px;background:transparent;border:none;
+  color:#555;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all 0.2s;
+}
+.seller-tab.active { color:var(--gold);border-bottom-color:var(--gold); }
+.seller-tab:hover:not(.active) { color:#aaa; }
+
 ::-webkit-scrollbar { width:4px; height:4px; }
 ::-webkit-scrollbar-track { background:var(--bg); }
 ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
@@ -2591,10 +2607,64 @@ tbody td { padding:10px 14px; font-size:13px; }
     </div>
   </div>
 
-  <div class="content">
+  <!-- TABS -->
+  <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);padding:0 24px;background:var(--surface);">
+    <button class="seller-tab active" id="tab-btn-main" onclick="sellerTab('main',this)">📦 Ventas</button>
+    <button class="seller-tab" id="tab-btn-historial" onclick="sellerTab('historial',this)">📋 Historial</button>
+  </div>
 
-    <!-- INVENTARIO TIENDA -->
-    <!-- SURTIR LISTA — ARRIBA -->
+  <!-- TAB: VENTAS -->
+  <div id="seller-tab-main" class="content">
+
+    <!-- 1. INVENTARIO — solo botones, sin grid -->
+    <div class="section-hdr" style="margin-top:0;">🛒 Inventario</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:8px;">
+      <button onclick="openQuickLoad('add')"
+        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
+          background:rgba(240,160,32,0.12);color:#f0a020;border:1px solid rgba(240,160,32,0.4);
+          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
+        onmouseover="this.style.background='rgba(240,160,32,0.22)'"
+        onmouseout="this.style.background='rgba(240,160,32,0.12)'">
+        ⚡ Carga Rápida
+      </button>
+      <button onclick="openQuickLoad('sell')"
+        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
+          background:rgba(224,64,64,0.12);color:var(--red);border:1px solid rgba(224,64,64,0.4);
+          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
+        onmouseover="this.style.background='rgba(224,64,64,0.22)'"
+        onmouseout="this.style.background='rgba(224,64,64,0.12)'">
+        💸 Venta Rápida
+      </button>
+      <button onclick="openQuickLoad('venta')"
+        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
+          background:rgba(212,168,32,0.12);color:#d4a820;border:1px solid rgba(212,168,32,0.4);
+          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
+        onmouseover="this.style.background='rgba(212,168,32,0.22)'"
+        onmouseout="this.style.background='rgba(212,168,32,0.12)'">
+        🛍 Venta Nueva
+      </button>
+      <button onclick="openPreciosConfig()"
+        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
+          background:rgba(160,96,240,0.12);color:#a060f0;border:1px solid rgba(160,96,240,0.4);
+          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
+        onmouseover="this.style.background='rgba(160,96,240,0.22)'"
+        onmouseout="this.style.background='rgba(160,96,240,0.12)'">
+        💲 Precios
+      </button>
+      <button onclick="exportShopText()"
+        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
+          background:rgba(48,192,96,0.12);color:var(--green);border:1px solid rgba(48,192,96,0.4);
+          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
+        onmouseover="this.style.background='rgba(48,192,96,0.22)'"
+        onmouseout="this.style.background='rgba(48,192,96,0.12)'">
+        📋 Exportar Stock
+      </button>
+    </div>
+    <div style="text-align:right;margin-bottom:24px;">
+      <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
+    </div>
+
+    <!-- 2. SURTIR LISTA -->
     <div class="section-hdr" style="margin-top:0;">📋 Surtir Lista <span>COMPARAR CON INVENTARIO</span></div>
     <div class="panel">
       <div class="panel-title">Pega la lista de faltantes del cliente — el sistema la compara automáticamente con tu stock</div>
@@ -2606,56 +2676,21 @@ tbody td { padding:10px 14px; font-size:13px; }
           padding:12px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;
           resize:vertical;outline:none;line-height:1.7;"
         oninput="previewIAPaste()"></textarea>
-
       <div id="ia-preview" style="margin-top:14px;display:none;">
-        <!-- Stats bar -->
         <div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;align-items:center;">
           <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="ia-match-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">COINCIDENCIAS</span></div>
           <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--red);" id="ia-nomatch-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">SIN STOCK</span></div>
           <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="ia-total">$0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">TOTAL</span></div>
           <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0;">
-            <button onclick="copiarCoincidencias()"
-              style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:11px 16px;
-                background:rgba(160,96,240,0.15);color:var(--gold);border:1px solid rgba(160,96,240,0.4);
-                border-radius:8px;cursor:pointer;white-space:nowrap;">
-              📋 Copiar
-            </button>
-            <button onclick="generarVentaIA()"
-              style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:11px 20px;
-                background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
-              ✓ VENDER
-            </button>
+            <button onclick="copiarCoincidencias()" style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:11px 16px;background:rgba(160,96,240,0.15);color:var(--gold);border:1px solid rgba(160,96,240,0.4);border-radius:8px;cursor:pointer;white-space:nowrap;">📋 Copiar</button>
+            <button onclick="generarVentaIA()" style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:11px 20px;background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">✓ VENDER</button>
           </div>
         </div>
-
-        <!-- Matches grouped by team -->
         <div id="ia-chips" style="display:flex;flex-direction:column;gap:10px;"></div>
       </div>
     </div>
 
-    <!-- INVENTARIO TIENDA — colapsable -->
-    <div class="section-hdr" style="margin-top:40px;cursor:pointer;user-select:none;" onclick="toggleInventario()">
-      🛒 Inventario
-      <span id="inv-toggle-badge" style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:1px;margin-left:4px;">▼ ver</span>
-      <span style="flex:1;"></span>
-    </div>
-    <div id="inv-collapsible" style="display:none;">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-        <button onclick="loadAndRenderShopAdmin()" class="btn-refresh">↻ Recargar</button>
-        <button onclick="exportShopText()" class="btn-refresh" style="color:var(--green);border-color:rgba(48,192,96,0.4);">📋 Exportar stock</button>
-        <button onclick="openQuickLoad('add')" class="btn-refresh" style="color:#f0a020;border-color:rgba(240,160,32,0.4);">⚡ Carga Rápida</button>
-        <button onclick="openQuickLoad('sell')" class="btn-refresh" style="color:var(--red);border-color:rgba(224,64,64,0.4);">💸 Venta Rápida</button>
-        <button onclick="openQuickLoad('venta')" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">🛍 Venta Nueva</button>
-        <button onclick="openPreciosConfig()" class="btn-refresh" style="color:#a060f0;border-color:rgba(160,96,240,0.4);">💲 Precios</button>
-        <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
-      </div>
-      <div class="panel" id="shop-admin-panel">
-        <p style="color:#555;font-size:13px;text-align:center;padding:20px;">Pulsa "↻ Recargar" para ver el inventario.</p>
-      </div>
-    </div>
-
-    <!-- HISTORIAL DE VENTAS -->
-    <!-- ORDEN AL AZAR -->
+    <!-- 3. ORDEN AL AZAR -->
     <div class="section-hdr" style="margin-top:40px;">🎲 Orden al Azar <span>SURTIR SIN REPETIR</span></div>
     <div class="panel">
       <div class="panel-title">Genera una selección aleatoria de tu inventario sin repetir</div>
@@ -2663,66 +2698,36 @@ tbody td { padding:10px 14px; font-size:13px; }
         <div>
           <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:6px;">CANTIDAD</label>
           <input id="random-qty" type="number" value="100" min="1" max="994"
-            style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;
-              padding:9px 12px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:22px;
-              outline:none;text-align:center;">
+            style="width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:22px;outline:none;text-align:center;">
         </div>
         <div>
           <label style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:2px;display:block;margin-bottom:6px;">TIPO</label>
           <div style="display:flex;gap:6px;">
-            <button id="rnd-btn-all" onclick="setRandomType('all')"
-              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
-                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid rgba(160,96,240,0.5);
-                background:rgba(160,96,240,0.2);color:var(--gold);transition:all 0.15s;">
-              Todas
-            </button>
-            <button id="rnd-btn-normal" onclick="setRandomType('normal')"
-              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
-                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);
-                background:transparent;color:#555;transition:all 0.15s;">
-              Solo normales
-            </button>
-            <button id="rnd-btn-holo" onclick="setRandomType('holo')"
-              style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;
-                padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);
-                background:transparent;color:#555;transition:all 0.15s;">
-              ✨ Solo holos
-            </button>
+            <button id="rnd-btn-all" onclick="setRandomType('all')" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid rgba(160,96,240,0.5);background:rgba(160,96,240,0.2);color:var(--gold);transition:all 0.15s;">Todas</button>
+            <button id="rnd-btn-normal" onclick="setRandomType('normal')" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);background:transparent;color:#555;transition:all 0.15s;">Solo normales</button>
+            <button id="rnd-btn-holo" onclick="setRandomType('holo')" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--border);background:transparent;color:#555;transition:all 0.15s;">✨ Solo holos</button>
           </div>
         </div>
-        <button onclick="generarOrdenAlAzar()"
-          style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;padding:11px 24px;
-            background:linear-gradient(135deg,var(--nexo2,#7030c0),var(--gold));color:white;
-            border:none;border-radius:8px;cursor:pointer;white-space:nowrap;">
-          🎲 Generar
-        </button>
+        <button onclick="generarOrdenAlAzar()" style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;padding:11px 24px;background:linear-gradient(135deg,#6030a0,#a060f0);color:white;border:none;border-radius:8px;cursor:pointer;white-space:nowrap;">🎲 Generar</button>
       </div>
-
       <div id="random-preview" style="display:none;">
-        <!-- Stats -->
         <div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;align-items:center;">
           <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--gold);" id="rnd-count">0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">ESTAMPAS</span></div>
           <div><span style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--green);" id="rnd-total">$0</span><br><span style="font-family:'DM Mono',monospace;font-size:9px;color:#555;letter-spacing:1px;">TOTAL</span></div>
           <div style="margin-left:auto;display:flex;gap:8px;">
-            <button onclick="copiarOrdenAlAzar()"
-              style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;
-                padding:10px 16px;background:rgba(160,96,240,0.15);color:var(--gold);
-                border:1px solid rgba(160,96,240,0.4);border-radius:8px;cursor:pointer;">
-              📋 Copiar lista
-            </button>
-            <button onclick="confirmarOrdenAlAzar()"
-              style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:10px 20px;
-                background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">
-              ✓ Confirmar y vender
-            </button>
+            <button onclick="copiarOrdenAlAzar()" style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;padding:10px 16px;background:rgba(160,96,240,0.15);color:var(--gold);border:1px solid rgba(160,96,240,0.4);border-radius:8px;cursor:pointer;">📋 Copiar lista</button>
+            <button onclick="confirmarOrdenAlAzar()" style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;padding:10px 20px;background:linear-gradient(135deg,#a07010,#d4a820);color:#000;border:none;border-radius:8px;cursor:pointer;">✓ Confirmar y vender</button>
           </div>
         </div>
-        <!-- Grouped result -->
         <div id="rnd-chips" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
     </div>
 
-    <div class="section-hdr" style="margin-top:40px;">📋 Historial de Ventas <span>FIREBASE</span></div>
+  </div>
+
+  <!-- TAB: HISTORIAL -->
+  <div id="seller-tab-historial" class="content" style="display:none;">
+    <div class="section-hdr" style="margin-top:0;">📋 Historial de Ventas <span>FIREBASE</span></div>
     <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
       <button onclick="loadSalesHistory()" class="btn-refresh">↻ Cargar historial</button>
       <span id="sales-total-label" style="font-family:'DM Mono',monospace;font-size:11px;color:#555;"></span>
@@ -2730,8 +2735,8 @@ tbody td { padding:10px 14px; font-size:13px; }
     <div class="panel" id="sales-history-panel">
       <p style="color:#555;font-size:12px;text-align:center;padding:16px;">Pulsa "Cargar historial" para ver las ventas.</p>
     </div>
-
   </div>
+
 </div>
 
 </body>
