@@ -567,7 +567,7 @@ async function loadAndRenderShopAdmin() {
   if (!panel) return;
   panel.innerHTML = '<p style="color:#555;font-size:13px;text-align:center;padding:20px;">Cargando…</p>';
   try {
-    const snap = await getDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'));
+    const snap = await getDoc(doc(db, 'sellerData', window._sellerUid));
     window._shopStock = snap.exists() ? (snap.data().stock || {}) : {};
     renderShopAdmin();
   } catch(e) {
@@ -641,7 +641,7 @@ window.adjustStock = function(code, delta) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock }, { merge: false });
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock }, { merge: true });
       const saved = document.getElementById('shop-admin-saved');
       if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display='none', 2000); }
     } catch(e) { console.error('save error', e); }
@@ -660,7 +660,7 @@ window.setStock = function(code, val) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock }, { merge: false });
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock }, { merge: true });
       const saved = document.getElementById('shop-admin-saved');
       if (saved) { saved.style.display = 'inline'; setTimeout(() => saved.style.display='none', 2000); }
     } catch(e) { console.error('save error', e); }
@@ -973,8 +973,8 @@ window.finalizarVenta = async function() {
       window._shopStock[x.code] = Math.max(0, (window._shopStock[x.code] || 0) - 1);
     });
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock: window._shopStock }, { merge: false });
-      await addDoc(collection(db, 'sellers', window._sellerUid, 'shop', 'sales'), {
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
+      await addDoc(collection(db, window._sellerUid + '_sales'), {
         items: itemsSnap.map(x => ({ code: x.code, price: window.getPrice(x.code) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
@@ -1286,7 +1286,7 @@ function scheduleQLSave() {
   clearTimeout(_qlSaveTimer);
   _qlSaveTimer = setTimeout(async () => {
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock: window._shopStock }, { merge: false });
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
       const saved = document.getElementById('shop-admin-saved');
       if (saved) { saved.style.display='inline'; setTimeout(()=>saved.style.display='none',2000); }
     } catch(e) { console.error(e); }
@@ -1626,7 +1626,7 @@ async function loadSpecialsList() {
   const listEl = document.getElementById('specials-list');
   if (!listEl) return;
   try {
-    const snap = await getDocs(collection(db, 'sellers', window._sellerUid, 'shop', 'specials'));
+    const snap = await getDocs(collection(db, window._sellerUid + '_specials'));
     if (snap.empty) { listEl.innerHTML = '<p style="color:#444;font-size:12px;font-style:italic;">No hay especiales aún.</p>'; return; }
     listEl.innerHTML = '';
     snap.forEach(d => {
@@ -1662,7 +1662,7 @@ window.saveSpecial = async function() {
   showStatus('Comprimiendo imagen…');
   try {
     const imageB64 = await compressImage(file, 600, 0.75);
-    await addDoc(collection(db, 'sellers', window._sellerUid, 'shop', 'specials'), {
+    await addDoc(collection(db, window._sellerUid + '_specials'), {
       code, name, price, imageB64, ts: Date.now()
     });
     // Clear form
@@ -1679,7 +1679,7 @@ window.saveSpecial = async function() {
 window.deleteSpecial = async function(id) {
   if (!confirm('¿Eliminar esta estampa especial?')) return;
   try {
-    await deleteDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'specials', id));
+    await deleteDoc(doc(db, window._sellerUid + '_specials', id));
     showStatus('🗑 Eliminada');
     loadSpecialsList();
   } catch(e) { showStatus('❌ Error: ' + e.message); }
@@ -1822,8 +1822,8 @@ window.generarVentaIA = async function() {
       window._shopStock[c] = Math.max(0, (window._shopStock[c]||0) - 1);
     });
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock: window._shopStock }, { merge: false });
-      await addDoc(collection(db, 'sellers', window._sellerUid, 'shop', 'sales'), {
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
+      await addDoc(collection(db, window._sellerUid + '_sales'), {
         items: codesSnap.map(c => ({ code: c, price: window.getPrice(c) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
@@ -1889,7 +1889,7 @@ window.copiarCoincidencias = function() {
 
 window.toggleSaleStatus = async function(saleId, newStatus) {
   try {
-    await firestoreUpdateDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'sales', saleId), { status: newStatus });
+    await firestoreUpdateDoc(doc(db, window._sellerUid + '_sales', saleId), { status: newStatus });
     showStatus(newStatus === 'completada' ? '✅ Marcada como surtida' : '⏳ Marcada como pendiente');
     loadSalesHistory();
   } catch(e) { showStatus('❌ Error: ' + e.message); }
@@ -1902,7 +1902,7 @@ window.cancelarVenta = async function(saleId) {
   // Obtener datos de la venta
   let saleData;
   try {
-    const snap = await getDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'sales', saleId));
+    const snap = await getDoc(doc(db, window._sellerUid + '_sales', saleId));
     if (!snap.exists()) { showStatus('❌ Venta no encontrada'); return; }
     saleData = snap.data();
   } catch(e) { showStatus('❌ Error: ' + e.message); return; }
@@ -1921,8 +1921,8 @@ window.cancelarVenta = async function(saleId) {
   });
 
   try {
-    await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock: window._shopStock }, { merge: false });
-    await deleteDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'sales', saleId));
+    await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
+    await deleteDoc(doc(db, window._sellerUid + '_sales', saleId));
     showStatus(`↩️ Venta cancelada — ${items.length} estampa(s) devueltas al stock`);
     loadSalesHistory();
     renderShopAdmin();
@@ -1934,7 +1934,7 @@ window.loadSalesHistory = async function() {
   if (!panel) return;
   panel.innerHTML = '<p style="color:#555;font-size:12px;text-align:center;padding:16px;">Cargando…</p>';
   try {
-    const snap = await getDocs(collection(db, 'sellers', window._sellerUid, 'shop', 'sales'));
+    const snap = await getDocs(collection(db, window._sellerUid + '_sales'));
     const sales = [];
     snap.forEach(d => sales.push({ id: d.id, ...d.data() }));
     sales.sort((a,b) => b.ts - a.ts);
@@ -2158,8 +2158,8 @@ window.confirmarOrdenAlAzar = function() {
       window._shopStock[c] = Math.max(0, (window._shopStock[c]||0) - 1);
     });
     try {
-      await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'inventory'), { stock: window._shopStock }, { merge: false });
-      await addDoc(collection(db, 'sellers', window._sellerUid, 'shop', 'sales'), {
+      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
+      await addDoc(collection(db, window._sellerUid + '_sales'), {
         items: codes.map(c => ({ code: c, price: window.getPrice(c) })),
         total, ts: Date.now(),
         date: new Date().toLocaleDateString('es-MX'),
@@ -2188,14 +2188,16 @@ window._prices = { normal: 5, holo: 10, custom: {} };
 
 async function loadPrices() {
   try {
-    const snap = await getDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'prices'));
-    if (snap.exists()) window._prices = { normal:5, holo:10, custom:{}, ...snap.data() };
+    const snap = await getDoc(doc(db, 'sellerData', window._sellerUid));
+    if (snap.exists() && snap.data().prices) {
+      window._prices = { normal:5, holo:10, custom:{}, ...snap.data().prices };
+    }
   } catch(e) { console.error('prices load', e); }
 }
 
 async function savePrices() {
   try {
-    await setDoc(doc(db, 'sellers', window._sellerUid, 'shop', 'prices'), window._prices);
+    await setDoc(doc(db, 'sellerData', window._sellerUid), { prices: window._prices }, { merge: true });
     showStatus('✅ Precios guardados');
   } catch(e) { showStatus('❌ Error: ' + e.message); }
 }
