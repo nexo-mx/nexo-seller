@@ -2324,6 +2324,20 @@ window.savePreciosConfig = async function() {
   document.getElementById('precios-overlay')?.remove();
 };
 
+window.toggleInventario = function() {
+  const panel = document.getElementById('inv-collapsible');
+  const badge = document.getElementById('inv-toggle-badge');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (badge) badge.textContent = isOpen ? '▼ ver' : '▲ ocultar';
+  // Load inventory on first open
+  if (!isOpen && !panel.dataset.loaded) {
+    panel.dataset.loaded = '1';
+    loadAndRenderShopAdmin();
+  }
+};
+
 </script>
 
 <style>
@@ -2580,23 +2594,8 @@ tbody td { padding:10px 14px; font-size:13px; }
   <div class="content">
 
     <!-- INVENTARIO TIENDA -->
-    <div class="section-hdr" style="margin-top:40px;">🛒 Inventario Tienda <span>ADMIN</span></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-      <button onclick="loadAndRenderShopAdmin()" class="btn-refresh">↻ Recargar</button>
-      <button onclick="exportShopText()" class="btn-refresh" style="color:var(--green);border-color:rgba(48,192,96,0.4);">📋 Exportar stock</button>
-      <button onclick="openQuickLoad('add')" class="btn-refresh" style="color:#f0a020;border-color:rgba(240,160,32,0.4);">⚡ Carga Rápida</button>
-      <button onclick="openQuickLoad('sell')" class="btn-refresh" style="color:var(--red);border-color:rgba(224,64,64,0.4);">💸 Venta Rápida</button>
-      <button onclick="openQuickLoad('venta')" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">🛍 Venta Nueva</button>
-
-      <button onclick="openPreciosConfig()" class="btn-refresh" style="color:#a060f0;border-color:rgba(160,96,240,0.4);">💲 Precios</button>
-      <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
-    </div>
-    <div class="panel" id="shop-admin-panel">
-      <p style="color:#555;font-size:13px;text-align:center;padding:20px;">Cargando inventario…</p>
-    </div>
-
-    <!-- SURTIR LISTA -->
-    <div class="section-hdr" style="margin-top:40px;">📋 Surtir Lista <span>COMPARAR CON INVENTARIO</span></div>
+    <!-- SURTIR LISTA — ARRIBA -->
+    <div class="section-hdr" style="margin-top:0;">📋 Surtir Lista <span>COMPARAR CON INVENTARIO</span></div>
     <div class="panel">
       <div class="panel-title">Pega la lista de faltantes del cliente — el sistema la compara automáticamente con tu stock</div>
       <p style="font-family:'DM Mono',monospace;font-size:11px;color:#555;margin-bottom:12px;line-height:1.7;">
@@ -2631,6 +2630,27 @@ tbody td { padding:10px 14px; font-size:13px; }
 
         <!-- Matches grouped by team -->
         <div id="ia-chips" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+    </div>
+
+    <!-- INVENTARIO TIENDA — colapsable -->
+    <div class="section-hdr" style="margin-top:40px;cursor:pointer;user-select:none;" onclick="toggleInventario()">
+      🛒 Inventario
+      <span id="inv-toggle-badge" style="font-family:'DM Mono',monospace;font-size:10px;color:#555;letter-spacing:1px;margin-left:4px;">▼ ver</span>
+      <span style="flex:1;"></span>
+    </div>
+    <div id="inv-collapsible" style="display:none;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+        <button onclick="loadAndRenderShopAdmin()" class="btn-refresh">↻ Recargar</button>
+        <button onclick="exportShopText()" class="btn-refresh" style="color:var(--green);border-color:rgba(48,192,96,0.4);">📋 Exportar stock</button>
+        <button onclick="openQuickLoad('add')" class="btn-refresh" style="color:#f0a020;border-color:rgba(240,160,32,0.4);">⚡ Carga Rápida</button>
+        <button onclick="openQuickLoad('sell')" class="btn-refresh" style="color:var(--red);border-color:rgba(224,64,64,0.4);">💸 Venta Rápida</button>
+        <button onclick="openQuickLoad('venta')" class="btn-refresh" style="color:#d4a820;border-color:rgba(212,168,32,0.4);">🛍 Venta Nueva</button>
+        <button onclick="openPreciosConfig()" class="btn-refresh" style="color:#a060f0;border-color:rgba(160,96,240,0.4);">💲 Precios</button>
+        <span id="shop-admin-saved" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green);display:none;">✓ Guardado</span>
+      </div>
+      <div class="panel" id="shop-admin-panel">
+        <p style="color:#555;font-size:13px;text-align:center;padding:20px;">Pulsa "↻ Recargar" para ver el inventario.</p>
       </div>
     </div>
 
