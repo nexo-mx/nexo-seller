@@ -132,6 +132,8 @@ const ALL_CODES = [...INTRO_CODES, ...CC_CODES, ...TEAMS.flatMap(t => makeTeamSt
 const TOTAL = ALL_CODES.length;
 
 async function loadData() {
+  // Flush any pending Inventario save before refreshing from Firestore
+  if (typeof flushQLSave === 'function' && _qlSaveTimer) await flushQLSave();
   showStatus('Cargando inventario…');
   try {
     await loadAndRenderShopAdmin();
@@ -858,6 +860,8 @@ window.setQLSubMode = function(sub) {
 };
 
 window.closeQuickLoad = function() {
+  // Flush any pending save immediately before closing
+  if (_qlSaveTimer) flushQLSave();
   _qlUndoStack = [];
   _saleItems   = [];
   const overlay = document.getElementById('ql-overlay');
@@ -1321,15 +1325,18 @@ function updateQLChip(code, qty) {
 }
 
 let _qlSaveTimer = null;
+async function flushQLSave() {
+  clearTimeout(_qlSaveTimer);
+  _qlSaveTimer = null;
+  try {
+    await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
+    const saved = document.getElementById('shop-admin-saved');
+    if (saved) { saved.style.display='inline'; setTimeout(()=>saved.style.display='none',2000); }
+  } catch(e) { console.error(e); }
+}
 function scheduleQLSave() {
   clearTimeout(_qlSaveTimer);
-  _qlSaveTimer = setTimeout(async () => {
-    try {
-      await setDoc(doc(db, 'sellerData', window._sellerUid), { stock: window._shopStock }, { merge: true });
-      const saved = document.getElementById('shop-admin-saved');
-      if (saved) { saved.style.display='inline'; setTimeout(()=>saved.style.display='none',2000); }
-    } catch(e) { console.error(e); }
-  }, 800);
+  _qlSaveTimer = setTimeout(flushQLSave, 300);
 }
 
 window.openQuickLoad   = window.openQuickLoad;
