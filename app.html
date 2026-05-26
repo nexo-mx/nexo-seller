@@ -555,6 +555,11 @@ const ADMIN_INTRO = ['00 1', ...Array.from({length:19},(_,i)=>`FWC ${i+1}`)];
 const ADMIN_CC    = Array.from({length:14},(_,i)=>`CC ${i+1}`);
 
 window._shopStock = {};
+// Restore unsaved draft from localStorage if it exists
+try {
+  const draft = localStorage.getItem('nexo_stock_draft');
+  if (draft) window._shopStock = JSON.parse(draft);
+} catch(_) {}
 let _saveTimer = null;
 
 function isHoloAdmin(code) {
@@ -569,8 +574,16 @@ async function loadAndRenderShopAdmin() {
   if (!panel) return;
   panel.innerHTML = '<p style="color:#555;font-size:13px;text-align:center;padding:20px;">Cargando…</p>';
   try {
+    // Flush any pending save first
+    if (typeof flushQLSave === 'function' && _qlSaveTimer) {
+      clearTimeout(_qlSaveTimer);
+      _qlSaveTimer = null;
+      await flushQLSave();
+    }
     const snap = await getDoc(doc(db, 'sellerData', window._sellerUid));
     window._shopStock = snap.exists() ? (snap.data().stock || {}) : {};
+    // Clear localStorage draft now that we have confirmed Firestore data
+    try { localStorage.removeItem('nexo_stock_draft'); } catch(_) {}
     renderShopAdmin();
   } catch(e) {
     panel.innerHTML = `<p style="color:var(--red);font-size:13px;padding:12px;">Error: ${e.message}</p>`;
@@ -1335,6 +1348,8 @@ async function flushQLSave() {
   } catch(e) { console.error(e); }
 }
 function scheduleQLSave() {
+  // Always persist to localStorage immediately as safety net
+  try { localStorage.setItem('nexo_stock_draft', JSON.stringify(window._shopStock)); } catch(_) {}
   clearTimeout(_qlSaveTimer);
   _qlSaveTimer = setTimeout(flushQLSave, 300);
 }
