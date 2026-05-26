@@ -740,18 +740,21 @@ let _voiceActive   = false;
 let _qlUndoStack  = []; // { code, prevQty }
 let _saleItems    = []; // { code, qty } for venta nueva
 
+// Internal toggle state for Inventario mode: 'add' | 'sell'
+let _qlSubMode = 'add';
+
 window.openQuickLoad = function(mode = 'add') {
   window._qlMode   = mode;
+  _qlSubMode       = 'add'; // default to sumar on open
   _qlUndoStack     = [];
   _saleItems       = [];
   const existing = document.getElementById('ql-overlay');
   if (existing) { closeQuickLoad(); return; }
 
-  const isSell     = mode === 'sell';
   const isVenta    = mode === 'venta';
-  const accentColor= isVenta ? '#d4a820' : isSell ? 'var(--red)' : '#f0a020';
-  const titleText  = isVenta ? '🛍 VENTA NUEVA' : isSell ? '💸 VENTA RÁPIDA' : '⚡ CARGA RÁPIDA';
-  const badgeText  = isVenta ? 'MARCAR VENTA' : isSell ? 'RESTAR -1' : 'SUMAR +1';
+  const isInv      = mode === 'add' || mode === 'sell'; // Inventario mode (formerly carga/venta rapida)
+  const accentColor= isVenta ? '#d4a820' : '#f0a020';
+  const titleText  = isVenta ? '🛍 VENTA NUEVA' : '📦 INVENTARIO';
 
   const overlay = document.createElement('div');
   overlay.id = 'ql-overlay';
@@ -759,12 +762,27 @@ window.openQuickLoad = function(mode = 'add') {
 
   overlay.innerHTML = `
     <!-- Header -->
-    <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+    <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;">
       <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:4px;color:${accentColor};">${titleText}</span>
-      <span style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:#555;">${badgeText}</span>
+
+      ${isInv ? `
+      <!-- Toggle Sumar / Restar -->
+      <div id="ql-toggle" style="display:flex;border-radius:7px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;">
+        <button id="ql-toggle-add" onclick="setQLSubMode('add')"
+          style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:5px 14px;
+            background:rgba(48,192,96,0.25);color:var(--green);border:none;cursor:pointer;transition:all 0.15s;">
+          + SUMAR
+        </button>
+        <button id="ql-toggle-sell" onclick="setQLSubMode('sell')"
+          style="font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;padding:5px 14px;
+            background:transparent;color:#555;border:none;border-left:1px solid var(--border);cursor:pointer;transition:all 0.15s;">
+          − RESTAR
+        </button>
+      </div>` : ''}
+
       ${isVenta ? `<span id="venta-total" style="margin-left:auto;font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--green);">$0</span>` : ''}
       <button onclick="qlUndo()" title="Deshacer última acción"
-        style="background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:#888;font-size:13px;padding:5px 10px;cursor:pointer;${isVenta?'':'margin-left:auto;'}">
+        style="background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:#888;font-size:13px;padding:5px 10px;cursor:pointer;${isVenta||isInv?'':'margin-left:auto;'}${isInv?'margin-left:auto;':''}">
         ↩ Deshacer
       </button>
       ${isVenta ? `<button onclick="finalizarVenta()"
@@ -787,8 +805,8 @@ window.openQuickLoad = function(mode = 'add') {
       </div>
 
       <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-        <!-- Batch input — only for carga/venta rapida -->
-        ${!isVenta ? `
+        <!-- Batch input — only for inventario mode -->
+        ${isInv ? `
         <div style="padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;gap:8px;align-items:center;">
           <input id="ql-batch-input" type="text" placeholder="Ej: 3 7 12 5 18 — Enter para aplicar"
             style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;
@@ -820,6 +838,25 @@ window.openQuickLoad = function(mode = 'add') {
   selectQLTeam('MEX');
 };
 
+// Switch between Sumar / Restar within Inventario mode
+window.setQLSubMode = function(sub) {
+  _qlSubMode = sub;
+  const btnAdd  = document.getElementById('ql-toggle-add');
+  const btnSell = document.getElementById('ql-toggle-sell');
+  if (!btnAdd || !btnSell) return;
+  if (sub === 'add') {
+    btnAdd.style.background  = 'rgba(48,192,96,0.25)';
+    btnAdd.style.color       = 'var(--green)';
+    btnSell.style.background = 'transparent';
+    btnSell.style.color      = '#555';
+  } else {
+    btnSell.style.background = 'rgba(224,64,64,0.2)';
+    btnSell.style.color      = 'var(--red)';
+    btnAdd.style.background  = 'transparent';
+    btnAdd.style.color       = '#555';
+  }
+};
+
 window.closeQuickLoad = function() {
   _qlUndoStack = [];
   _saleItems   = [];
@@ -847,11 +884,12 @@ window.qlTap = function(code) {
     return;
   }
 
-  // Carga rápida / Venta rápida — push undo
+  // Inventario (carga rápida) — push undo
   _qlUndoStack.push({ code, prevQty: cur });
   if (_qlUndoStack.length > 30) _qlUndoStack.shift();
 
-  const next = isSell ? Math.max(0, cur - 1) : cur + 1;
+  const subtract = isSell || _qlSubMode === 'sell';
+  const next = subtract ? Math.max(0, cur - 1) : cur + 1;
   window._shopStock[code] = next;
   updateQLChip(code, next);
   scheduleQLSave();
@@ -2625,15 +2663,7 @@ tbody td { padding:10px 14px; font-size:13px; }
           border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
         onmouseover="this.style.background='rgba(240,160,32,0.22)'"
         onmouseout="this.style.background='rgba(240,160,32,0.12)'">
-        ⚡ Carga Rápida
-      </button>
-      <button onclick="openQuickLoad('sell')"
-        style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
-          background:rgba(224,64,64,0.12);color:var(--red);border:1px solid rgba(224,64,64,0.4);
-          border-radius:10px;cursor:pointer;transition:all 0.2s;width:100%;"
-        onmouseover="this.style.background='rgba(224,64,64,0.22)'"
-        onmouseout="this.style.background='rgba(224,64,64,0.12)'">
-        💸 Venta Rápida
+        📦 Inventario
       </button>
       <button onclick="openQuickLoad('venta')"
         style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;padding:18px 16px;
