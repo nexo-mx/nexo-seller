@@ -1247,11 +1247,12 @@ window.qlTap = function(code) {
     return;
   }
 
-  // Carga rápida / Venta rápida
+  // Inventario — respetar toggle interno
   _qlUndoStack.push({ code, prevQty: cur });
   if (_qlUndoStack.length > 30) _qlUndoStack.shift();
 
-  const next = isSell ? Math.max(0, cur - 1) : cur + 1;
+  const subtract = isSell || _qlSubMode === 'sell';
+  const next = subtract ? Math.max(0, cur - 1) : cur + 1;
   window._shopStock[code] = next;
   updateQLChip(code, next);
   scheduleQLSave();
@@ -1271,7 +1272,7 @@ window.qlBatchInput = function() {
   const nums = raw.split(/[\s,/]+/).map(n => parseInt(n)).filter(n => !isNaN(n) && n >= 1 && n <= sec.codes.length);
   if (nums.length === 0) { showStatus('⚠️ No se encontraron números válidos'); return; }
 
-  const isSell = window._qlMode === 'sell';
+  const isSell = window._qlMode === 'sell' || _qlSubMode === 'sell';
   let applied = 0;
 
   nums.forEach(num => {
